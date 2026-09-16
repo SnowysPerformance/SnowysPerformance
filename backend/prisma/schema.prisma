@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  COACH
+  ATHLETE
+}
+
+enum WearableSource {
+  WHOOP
+  HEALTHKIT
+  GARMIN
+}
+
+model Team {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users    User[]
+  programs Program[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role
+  teamId       String
+  team         Team     @relation(fields: [teamId], references: [id])
+  createdAt    DateTime @default(now())
+
+  workoutLogs         WorkoutLog[]
+  testResults         TestResult[]
+  wearableData        WearableData[]
+  wearableAccountLinks WearableAccountLink[]
+  createdPrograms     Program[]            @relation("ProgramCreator")
+  programAssignments  ProgramAssignment[]
+}
+
+model Program {
+  id          String   @id @default(uuid())
+  teamId      String
+  team        Team     @relation(fields: [teamId], references: [id])
+  name        String
+  createdById String
+  createdBy   User     @relation("ProgramCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  weeks ProgramWeek[]
+  assignments ProgramAssignment[]
+}
+
+model ProgramWeek {
+  id         String  @id @default(uuid())
+  programId  String
+  program    Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  weekNumber Int
+  name       String?
+
+  days ProgramDay[]
+}
+
+model ProgramDay {
+  id        String      @id @default(uuid())
+  weekId    String
+  week      ProgramWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  dayOfWeek Int
+  name      String?
+
+  exercises ProgramExercise[]
+}
+
+model ProgramExercise {
+  id           String     @id @default(uuid())
+  dayId        String
+  day          ProgramDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  exerciseName String
+  sets         Int
+  reps         Int
+  percentOfMax Float?
+  notes        String?
+}
+
+model WorkoutLog {
+  id           String   @id @default(uuid())
+  teamId       String
+  athleteId    String
+  athlete      User     @relation(fields: [athleteId], references: [id])
+  date         DateTime
+  exerciseName String
+  sets         Json
+  volumeLoad   Float
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+model TestResult {
+  id        String   @id @default(uuid())
+  teamId    String
+  athleteId String
+  athlete   User     @relation(fields: [athleteId], references: [id])
+  testType  String
+  value     Float
+  unit      String
+  date      DateTime
+  createdAt DateTime @default(now())
+}
+
+model WearableData {
+  id         String         @id @default(uuid())
+  teamId     String
+  athleteId  String
+  athlete    User           @relation(fields: [athleteId], references: [id])
+  source     WearableSource
+  date       DateTime
+  recovery   Float?
+  strain     Float?
+  sleepScore Float?
+  restingHR  Float?
+  raw        Json?
+  createdAt  DateTime       @default(now())
+}
+
+// Maps a provider's external user id to one of our athletes, once they
+// complete that provider's OAuth flow. Webhooks arrive keyed by the
+// provider's user id, so this table is what lets us attribute that event.
+model WearableAccountLink {
+  id             String         @id @default(uuid())
+  athleteId      String
+  athlete        User           @relation(fields: [athleteId], references: [id])
+  source         WearableSource
+  externalUserId String
+  accessToken    String?
+  refreshToken   String?
+  createdAt      DateTime       @default(now())
+
+  @@unique([source, externalUserId])
+}
+
+// Which athlete(s) a program has been assigned to. An athlete only ever
+// sees programs that show up here for them — this is what keeps an
+// athlete's view scoped to "my prescribed plan" instead of the whole
+// team's program library.
+model ProgramAssignment {
+  id        String   @id @default(uuid())
+  programId String
+  program   Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   User     @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([programId, athleteId])
+}

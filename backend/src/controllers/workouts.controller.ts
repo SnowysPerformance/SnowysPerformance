@@ -1,0 +1,49 @@
+import { Request, Response } from "express";
+import { prisma } from "../db";
+
+function computeVolumeLoad(sets: any): number {
+  if (!Array.isArray(sets)) return 0;
+  return sets.reduce((sum: number, s: any) => sum + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0);
+}
+
+export async function createWorkoutLog(req: Request, res: Response) {
+  const { athleteId, date, exerciseName, sets, notes } = req.body;
+
+  if (req.user!.role === "ATHLETE" && athleteId && athleteId !== req.user!.userId) {
+    return res.status(403).json({ error: "Athletes can only log their own workouts" });
+  }
+  const targetAthleteId = req.user!.role === "COACH" ? (athleteId || req.user!.userId) : req.user!.userId;
+
+  const log = await prisma.workoutLog.create({
+    data: {
+      teamId: req.user!.teamId,
+      athleteId: targetAthleteId,
+      date: new Date(date),
+      exerciseName,
+      sets,
+      volumeLoad: computeVolumeLoad(sets),
+      notes,
+    },
+  });
+  res.status(201).json(log);
+}
+
+export async function listWorkoutLogs(req: Request, res: Response) {
+  const athleteIdFilter = req.query.athleteId as string | undefined;
+  const where: any = { teamId: req.user!.teamId };
+  if (req.user!.role === "ATHLETE") where.athleteId = req.user!.userId;
+  else if (athleteIdFilter) where.athleteId = athleteIdFilter;
+
+  const logs = await prisma.workoutLog.findMany({ where, orderBy: { date: "desc" } });
+  res.json(logs);
+}
+
+export async function deleteWorkoutLog(req: Request, res: Response) {
+  const log = await prisma.workoutLog.findUnique({ where: { id: req.params.id } });
+  if (!log || log.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+  if (req.user!.role === "ATHLETE" && log.athleteId !== req.user!.userId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  await prisma.workoutLog.delete({ where: { id: log.id } });
+  res.status(204).send();
+}
