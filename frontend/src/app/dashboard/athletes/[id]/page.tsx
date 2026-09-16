@@ -17,27 +17,45 @@ export default function AthleteDetailPage({ params }: { params: { id: string } }
   const [athlete, setAthlete] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [fatigue, setFatigue] = useState<any>(null);
-  const [programs, setPrograms] = useState<any[]>([]);
+  const [allPrograms, setAllPrograms] = useState<any[]>([]);
+  const [pickProgramId, setPickProgramId] = useState("");
   const [error, setError] = useState("");
 
+  async function load() {
+    try {
+      const [athletes, workoutLogs, fatigueData, programsData] = await Promise.all([
+        api("/api/teams/me/athletes"),
+        api(`/api/workouts?athleteId=${athleteId}`),
+        api(`/api/fatigue/${athleteId}`),
+        api("/api/programs"),
+      ]);
+      setAthlete(athletes.find((a: any) => a.id === athleteId));
+      setLogs(workoutLogs);
+      setFatigue(fatigueData);
+      setAllPrograms(programsData);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
   useEffect(() => {
-    (async () => {
-      try {
-        const [athletes, workoutLogs, fatigueData, allPrograms] = await Promise.all([
-          api("/api/teams/me/athletes"),
-          api(`/api/workouts?athleteId=${athleteId}`),
-          api(`/api/fatigue/${athleteId}`),
-          api("/api/programs"),
-        ]);
-        setAthlete(athletes.find((a: any) => a.id === athleteId));
-        setLogs(workoutLogs);
-        setFatigue(fatigueData);
-        setPrograms(allPrograms.filter((p: any) => (p.assignments || []).some((asg: any) => asg.athlete.id === athleteId)));
-      } catch (err: any) {
-        setError(err.message);
-      }
-    })();
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
+
+  const assignedPrograms = allPrograms.filter((p) => (p.assignments || []).some((asg: any) => asg.athlete.id === athleteId));
+  const unassignedPrograms = allPrograms.filter((p) => !(p.assignments || []).some((asg: any) => asg.athlete.id === athleteId));
+
+  async function assignProgram() {
+    if (!pickProgramId) return;
+    await api(`/api/programs/${pickProgramId}/assign`, { method: "POST", body: JSON.stringify({ athleteId }) });
+    setPickProgramId("");
+    load();
+  }
+  async function unassignProgram(programId: string) {
+    await api(`/api/programs/${programId}/assign/${athleteId}`, { method: "DELETE" });
+    load();
+  }
 
   if (error) return <p className="text-red-400">{error}</p>;
   if (!athlete) return <p className="text-faint">Loading…</p>;
@@ -99,15 +117,31 @@ export default function AthleteDetailPage({ params }: { params: { id: string } }
 
       <div>
         <div className="font-display text-sm uppercase tracking-wide text-muted mb-3">Assigned Programs</div>
-        {programs.length === 0 ? (
-          <p className="text-faint text-sm">No programs assigned yet — assign one from the Programs tab.</p>
+        {unassignedPrograms.length > 0 && (
+          <div className="flex gap-2 mb-3">
+            <select
+              className="bg-inputbg border border-edge rounded px-2 py-2 text-sm flex-1 focus:border-accent outline-none"
+              value={pickProgramId}
+              onChange={(e) => setPickProgramId(e.target.value)}
+            >
+              <option value="">Choose a program to assign…</option>
+              {unassignedPrograms.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <button onClick={assignProgram} className="bg-accent text-accenttext text-sm font-semibold rounded px-3 py-2 flex-shrink-0">Assign</button>
+          </div>
+        )}
+        {assignedPrograms.length === 0 ? (
+          <p className="text-faint text-sm">No programs assigned yet.</p>
         ) : (
           <ul className="space-y-2">
-            {programs.map((p) => (
-              <li key={p.id}>
-                <Link href={`/dashboard/programs/${p.id}`} className="block bg-surface border border-edge rounded p-3 text-sm text-accent underline hover:border-accent">
+            {assignedPrograms.map((p) => (
+              <li key={p.id} className="bg-surface border border-edge rounded p-3 text-sm flex items-center justify-between">
+                <Link href={`/dashboard/programs/${p.id}`} className="text-accent underline">
                   {p.name}
                 </Link>
+                <button onClick={() => unassignProgram(p.id)} className="text-faint hover:text-red-400 text-xs">Unassign</button>
               </li>
             ))}
           </ul>
