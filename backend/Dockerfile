@@ -7,4 +7,4 @@ COPY . .
 RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" npx prisma generate
 RUN npm run build
 EXPOSE 4000
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+CMD ["sh", "-c", "echo '--- ENV VAR NAMES AVAILABLE AT RUNTIME ---' && env | cut -d= -f1 | sort && echo '--- END ---' && npx prisma migrate deploy && npm start"]
