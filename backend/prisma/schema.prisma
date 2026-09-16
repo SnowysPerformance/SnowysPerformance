@@ -25,6 +25,7 @@ model Team {
 
   users    User[]
   programs Program[]
+  exerciseLibrary ExerciseLibraryItem[]
 }
 
 model User {
@@ -199,4 +200,19 @@ model ProgramAssignment {
   createdAt DateTime @default(now())
 
   @@unique([programId, athleteId])
+}
+
+// A team-wide shared exercise library, so an exercise name typed once by
+// anyone on the team autocompletes everywhere else, and coaches can attach
+// easier (regression) or harder (progression) variations to it.
+model ExerciseLibraryItem {
+  id           String   @id @default(uuid())
+  teamId       String
+  team         Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name         String
+  regressions  Json?
+  progressions Json?
+  createdAt    DateTime @default(now())
+
+  @@unique([teamId, name])
 }

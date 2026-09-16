@@ -108,6 +108,14 @@ export default function AthletesPage() {
             >
               {creatingPlan ? "Creating…" : "Create & Open Plan"}
             </button>
+            {selectedIds.length > 1 && (
+              <Link
+                href={`/dashboard/athletes/compare?ids=${selectedIds.join(",")}`}
+                className="text-sm border border-edge rounded px-4 py-2 text-muted hover:text-primary flex-shrink-0"
+              >
+                Compare Selected →
+              </Link>
+            )}
           </div>
         )}
       </div>

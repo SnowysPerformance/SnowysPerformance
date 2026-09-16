@@ -11,6 +11,7 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [label, setLabel] = useState("");
   const [exerciseName, setExerciseName] = useState("");
+  const [libraryItems, setLibraryItems] = useState<any[]>([]);
   const [type, setType] = useState("weighted");
   const [methodName, setMethodName] = useState("");
   const [band, setBand] = useState("");
@@ -28,6 +29,7 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
   }
   useEffect(() => {
     loadLogs();
+    api("/api/library").then(setLibraryItems).catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
 
@@ -89,7 +91,19 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
           <input className={inputClass} placeholder="Session label (optional)" value={label} onChange={(e) => setLabel(e.target.value)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <input className={inputClass} placeholder="Exercise name" value={exerciseName} onChange={(e) => setExerciseName(e.target.value)} />
+          <input
+            className={inputClass}
+            list="library-exercises"
+            placeholder="Exercise name"
+            value={exerciseName}
+            onChange={(e) => setExerciseName(e.target.value)}
+            onBlur={(e) => e.target.value.trim() && api("/api/library", { method: "POST", body: JSON.stringify({ name: e.target.value.trim() }) })}
+          />
+          <datalist id="library-exercises">
+            {libraryItems.map((it) => (
+              <option key={it.id} value={it.name} />
+            ))}
+          </datalist>
           <select className={inputClass} value={type} onChange={(e) => setType(e.target.value)}>
             <option value="weighted">Weighted</option>
             <option value="bodyweight">Bodyweight</option>

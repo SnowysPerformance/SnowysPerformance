@@ -47,6 +47,11 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
   const [bestE1rm, setBestE1rm] = useState<Record<string, number>>({});
   const [previewAthleteId, setPreviewAthleteId] = useState("");
+  const [library, setLibrary] = useState<any[]>([]);
+
+  useEffect(() => {
+    api("/api/library").then(setLibrary).catch(console.error);
+  }, []);
 
   const [phaseForm, setPhaseForm] = useState({ name: "", weeks: "", goal: "" });
   const [phaseFormOpen, setPhaseFormOpen] = useState(false);
@@ -159,6 +164,11 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   return (
     <div>
       <h1 className="font-display text-xl font-semibold mb-1">{program.name}</h1>
+      <datalist id="ex-lib">
+        {library.map((it: any) => (
+          <option key={it.id} value={it.name} />
+        ))}
+      </datalist>
       {isCoach && program.assignments?.length > 0 && (
         <div className="mb-4 flex items-center gap-2">
           <span className="text-xs text-faint">Preview 1RM for:</span>
@@ -272,6 +282,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                           ex={b.ex}
                           isCoach={isCoach}
                           bestE1rm={bestE1rm}
+                          library={library}
                           selected={!!selected[b.ex.id]}
                           onToggleSelect={() => setSelected((s) => ({ ...s, [b.ex.id]: !s[b.ex.id] }))}
                           onUpdate={(patch: any) => updateExercise(b.ex.id, patch)}
@@ -291,6 +302,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                                 ex={m}
                                 isCoach={isCoach}
                                 bestE1rm={bestE1rm}
+                                library={library}
                                 selected={!!selected[m.id]}
                                 onToggleSelect={() => setSelected((s) => ({ ...s, [m.id]: !s[m.id] }))}
                                 onUpdate={(patch: any) => updateExercise(m.id, patch)}
@@ -327,8 +339,11 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   );
 }
 
-function ExerciseCard({ ex, isCoach, bestE1rm, selected, onToggleSelect, onUpdate, onDelete, onLogThis }: any) {
+function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect, onUpdate, onDelete, onLogThis }: any) {
   const isTimeBased = ex.type === "timed" || ex.type === "sprint";
+  const libItem = (library || []).find((it: any) => it.name === ex.exerciseName);
+  const regressions: string[] = libItem?.regressions || [];
+  const progressions: string[] = libItem?.progressions || [];
   if (!isCoach) {
     return (
       <div className="bg-surface border border-edgesoft rounded p-2">
@@ -349,7 +364,30 @@ function ExerciseCard({ ex, isCoach, bestE1rm, selected, onToggleSelect, onUpdat
     <div className="bg-surface border border-edgesoft rounded p-2 space-y-1">
       <div className="flex items-center gap-1">
         <input type="checkbox" checked={selected} onChange={onToggleSelect} className="flex-shrink-0" />
-        <input className={inputClass} list="ex-lib" placeholder="Exercise" value={ex.exerciseName} onChange={(e) => onUpdate({ exerciseName: e.target.value })} />
+        <input
+          className={inputClass}
+          list="ex-lib"
+          placeholder="Exercise"
+          value={ex.exerciseName}
+          onChange={(e) => onUpdate({ exerciseName: e.target.value })}
+          onBlur={(e) => e.target.value.trim() && api("/api/library", { method: "POST", body: JSON.stringify({ name: e.target.value.trim() }) })}
+        />
+        {(regressions.length > 0 || progressions.length > 0) && (
+          <div className="flex gap-1">
+            {regressions.length > 0 && (
+              <select className={inputClass} style={{ fontSize: 10 }} value="" onChange={(e) => e.target.value && onUpdate({ exerciseName: e.target.value })}>
+                <option value="">Regress to…</option>
+                {regressions.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            )}
+            {progressions.length > 0 && (
+              <select className={inputClass} style={{ fontSize: 10 }} value="" onChange={(e) => e.target.value && onUpdate({ exerciseName: e.target.value })}>
+                <option value="">Progress to…</option>
+                {progressions.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            )}
+          </div>
+        )}
       </div>
       <input className={inputClass} placeholder="Method" value={ex.methodName || ""} onChange={(e) => onUpdate({ methodName: e.target.value })} />
       <select className={inputClass} value={ex.type} onChange={(e) => onUpdate({ type: e.target.value })}>

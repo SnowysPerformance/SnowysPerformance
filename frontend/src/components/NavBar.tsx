@@ -6,6 +6,7 @@ const coachLinks = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/athletes", label: "Athletes" },
   { href: "/dashboard/programs", label: "Programs" },
+  { href: "/dashboard/library", label: "Library" },
 ];
 
 const athleteLinks = [
