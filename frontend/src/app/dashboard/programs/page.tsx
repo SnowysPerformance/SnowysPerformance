@@ -7,14 +7,13 @@ import { useAuth } from "@/components/AuthProvider";
 export default function ProgramsPage() {
   const { user } = useAuth();
   const [programs, setPrograms] = useState<any[]>([]);
-  const [athletes, setAthletes] = useState<any[]>([]);
   const [name, setName] = useState("");
+  const [athletes, setAthletes] = useState<any[]>([]);
 
   useEffect(() => {
     load();
     if (user?.role === "COACH") api("/api/teams/me/athletes").then(setAthletes).catch(console.error);
   }, [user]);
-
   async function load() {
     setPrograms(await api("/api/programs"));
   }
@@ -30,11 +29,8 @@ export default function ProgramsPage() {
   }
 
   async function toggleAssign(programId: string, athleteId: string, assigned: boolean) {
-    if (assigned) {
-      await api(`/api/programs/${programId}/assign/${athleteId}`, { method: "DELETE" });
-    } else {
-      await api(`/api/programs/${programId}/assign`, { method: "POST", body: JSON.stringify({ athleteId }) });
-    }
+    if (assigned) await api(`/api/programs/${programId}/assign/${athleteId}`, { method: "DELETE" });
+    else await api(`/api/programs/${programId}/assign`, { method: "POST", body: JSON.stringify({ athleteId }) });
     load();
   }
 
@@ -43,21 +39,24 @@ export default function ProgramsPage() {
   return (
     <div className="space-y-8">
       {isCoach && (
-        <form onSubmit={createProgram} className="bg-white border rounded p-4 flex gap-3 max-w-lg">
-          <input className="border rounded px-2 py-2 flex-1" placeholder="New program name" value={name} onChange={(e) => setName(e.target.value)} />
-          <button className="bg-slate-900 text-white rounded px-3 py-2">Create</button>
+        <form onSubmit={createProgram} className="bg-surface border border-edge rounded p-4 flex gap-3 max-w-lg">
+          <input
+            className="bg-inputbg border border-edge rounded px-2 py-2 text-sm flex-1 placeholder-faint focus:border-accent outline-none"
+            placeholder="New program name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <button className="bg-accent text-accenttext font-semibold rounded px-3 py-2 hover:bg-accentstrong transition-colors">Create</button>
         </form>
       )}
-
       <div>
-        <h1 className="text-xl font-semibold mb-4">{isCoach ? "Programs" : "Your Plans"}</h1>
+        <h1 className="font-display text-xl font-semibold mb-4">{isCoach ? "Programs" : "Your Plans"}</h1>
         <ul className="space-y-3">
           {programs.map((p) => (
-            <li key={p.id} className="bg-white border rounded p-4">
-              <Link href={`/dashboard/programs/${p.id}`} className="font-medium underline">
+            <li key={p.id} className="bg-surface border border-edge rounded p-4">
+              <Link href={`/dashboard/programs/${p.id}`} className="font-medium underline text-accent">
                 {p.name}
               </Link>
-
               {isCoach && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {athletes.map((a) => {
@@ -66,25 +65,21 @@ export default function ProgramsPage() {
                       <button
                         key={a.id}
                         onClick={() => toggleAssign(p.id, a.id, assigned)}
-                        className={`text-xs rounded-full px-3 py-1 border ${
-                          assigned ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-300"
-                        }`}
+                        className={`text-xs rounded-full px-3 py-1 border ${assigned ? "bg-accent text-accenttext border-accent font-semibold" : "bg-void text-muted border-edge"}`}
                       >
                         {assigned ? "✓ " : "+ "}
                         {a.name}
                       </button>
                     );
                   })}
-                  {athletes.length === 0 && <span className="text-xs text-slate-400">No athletes on your team yet.</span>}
+                  {athletes.length === 0 && <span className="text-xs text-faint">No athletes on your team yet.</span>}
                 </div>
               )}
             </li>
           ))}
         </ul>
         {programs.length === 0 && (
-          <p className="text-slate-500">
-            {isCoach ? "No programs yet." : "No plans have been assigned to you yet — check back with your coach."}
-          </p>
+          <p className="text-faint text-sm">{isCoach ? "No programs yet." : "No plans have been assigned to you yet — check back with your coach."}</p>
         )}
       </div>
     </div>

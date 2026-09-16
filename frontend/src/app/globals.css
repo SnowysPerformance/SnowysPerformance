@@ -1,3 +1,14 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+html, body {
+  background-color: #14161C;
+  color: #ECEEF2;
+}
+
+::placeholder {
+  color: #5B5F6E;
+}

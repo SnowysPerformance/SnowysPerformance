@@ -16,8 +16,8 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
       .catch((err) => setError(err.message));
   }, [params.id]);
 
-  if (error) return <p className="text-red-600">{error}</p>;
-  if (!program) return <p>Loading…</p>;
+  if (error) return <p className="text-red-400">{error}</p>;
+  if (!program) return <p className="text-faint">Loading…</p>;
 
   function logThis(exerciseName: string) {
     router.push(`/dashboard/workouts?exercise=${encodeURIComponent(exerciseName)}`);
@@ -25,15 +25,15 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">{program.name}</h1>
+      <h1 className="font-display text-xl font-semibold mb-4">{program.name}</h1>
       {program.weeks.map((w: any) => (
         <div key={w.id} className="mb-6">
-          <h2 className="font-medium mb-2">{w.name || `Week ${w.weekNumber}`}</h2>
-          {w.days.length === 0 && <p className="text-slate-500 text-sm">No days added yet.</p>}
+          <h2 className="font-medium mb-2 text-muted">{w.name || `Week ${w.weekNumber}`}</h2>
+          {w.days.length === 0 && <p className="text-faint text-sm">No days added yet.</p>}
           {w.days.map((d: any) => (
-            <div key={d.id} className="bg-white border rounded p-3 mb-2">
+            <div key={d.id} className="bg-surface border border-edge rounded p-3 mb-2">
               <div className="font-medium">{d.name || `Day ${d.dayOfWeek}`}</div>
-              <ul className="text-sm text-slate-600 mt-1 space-y-1">
+              <ul className="text-sm text-muted mt-1 space-y-1">
                 {d.exercises.map((ex: any) => (
                   <li key={ex.id} className="flex items-center justify-between">
                     <span>
@@ -41,7 +41,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                       {ex.percentOfMax ? ` @ ${ex.percentOfMax}%` : ""}
                     </span>
                     {user?.role === "ATHLETE" && (
-                      <button onClick={() => logThis(ex.exerciseName)} className="text-xs underline text-slate-500 ml-3 flex-shrink-0">
+                      <button onClick={() => logThis(ex.exerciseName)} className="text-xs underline text-accent ml-3 flex-shrink-0">
                         Log this
                       </button>
                     )}

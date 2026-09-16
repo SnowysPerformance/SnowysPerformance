@@ -3,12 +3,12 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 
-const FLAG_COLORS: Record<string, string> = {
-  HIGH_RISK: "bg-red-100 text-red-700",
-  ELEVATED_RISK: "bg-amber-100 text-amber-700",
-  OPTIMAL: "bg-emerald-100 text-emerald-700",
-  UNDERTRAINING: "bg-blue-100 text-blue-700",
-  INSUFFICIENT_DATA: "bg-slate-100 text-slate-500",
+const FLAG_STYLES: Record<string, string> = {
+  HIGH_RISK: "bg-red-950/40 text-red-300 border-red-800/50",
+  ELEVATED_RISK: "bg-amber-950/40 text-amber-300 border-amber-800/50",
+  OPTIMAL: "bg-emerald-950/40 text-emerald-300 border-emerald-800/50",
+  UNDERTRAINING: "bg-sky-950/40 text-sky-300 border-sky-800/50",
+  INSUFFICIENT_DATA: "bg-raised text-faint border-edge",
 };
 
 export default function FatiguePage() {
@@ -26,24 +26,22 @@ export default function FatiguePage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">Fatigue & Overtraining Risk</h1>
-      <p className="text-sm text-slate-500 mb-4">
-        Based on Acute:Chronic Workload Ratio (7-day load vs. 4-week average) plus wearable recovery, where available.
-      </p>
+      <h1 className="font-display text-xl font-semibold mb-4">Fatigue & Overtraining Risk</h1>
+      <p className="text-sm text-faint mb-4">Based on Acute:Chronic Workload Ratio (7-day load vs. 4-week average) plus wearable recovery, where available.</p>
       <div className="space-y-3">
         {data.map((d) => (
-          <div key={d.athleteId} className="bg-white border rounded p-4">
+          <div key={d.athleteId} className="bg-surface border border-edge rounded p-4">
             <div className="flex justify-between items-center">
               <span className="font-medium">{d.athleteId === user?.id ? "You" : d.athleteId}</span>
-              <span className={`text-xs font-semibold rounded px-2 py-1 ${FLAG_COLORS[d.flag]}`}>{d.flag.replace("_", " ")}</span>
+              <span className={`text-xs font-semibold rounded px-2 py-1 border ${FLAG_STYLES[d.flag]}`}>{d.flag.replace("_", " ")}</span>
             </div>
-            <div className="text-sm text-slate-500 mt-2">
+            <div className="text-sm text-faint mt-2">
               ACWR: {d.acwr ?? "—"} · Acute load: {d.acuteLoad} · Chronic (wk avg): {d.chronicLoad} · Recovery avg: {d.recoveryAvg7d ?? "—"}%
             </div>
-            <div className="text-sm mt-2">{d.message}</div>
+            <div className="text-sm mt-2 text-muted">{d.message}</div>
           </div>
         ))}
-        {data.length === 0 && <p className="text-slate-500">No fatigue data yet.</p>}
+        {data.length === 0 && <p className="text-faint text-sm">No fatigue data yet.</p>}
       </div>
     </div>
   );

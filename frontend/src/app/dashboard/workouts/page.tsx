@@ -15,6 +15,8 @@ export default function WorkoutsPage() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [logs, setLogs] = useState<any[]>([]);
 
+  const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none";
+
   useEffect(() => {
     const prefill = searchParams.get("exercise");
     if (prefill) setExerciseName(prefill);
@@ -35,12 +37,7 @@ export default function WorkoutsPage() {
     e.preventDefault();
     await api("/api/workouts", {
       method: "POST",
-      body: JSON.stringify({
-        athleteId: athleteId || undefined,
-        exerciseName,
-        date,
-        sets: [{ weight: Number(weight), reps: Number(reps) }],
-      }),
+      body: JSON.stringify({ athleteId: athleteId || undefined, exerciseName, date, sets: [{ weight: Number(weight), reps: Number(reps) }] }),
     });
     setExerciseName("");
     setWeight("");
@@ -51,10 +48,10 @@ export default function WorkoutsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold mb-4">Log a Workout</h1>
-        <form onSubmit={submit} className="bg-white border rounded p-4 grid grid-cols-2 gap-3 max-w-lg">
+        <h1 className="font-display text-xl font-semibold mb-4">Log a Workout</h1>
+        <form onSubmit={submit} className="bg-surface border border-edge rounded p-4 grid grid-cols-2 gap-3 max-w-lg">
           {user?.role === "COACH" && (
-            <select className="border rounded px-2 py-2 col-span-2" value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
+            <select className={inputClass + " col-span-2"} value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
               <option value="">Select athlete…</option>
               {athletes.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -63,28 +60,23 @@ export default function WorkoutsPage() {
               ))}
             </select>
           )}
-          <input
-            className="border rounded px-2 py-2 col-span-2"
-            placeholder="Exercise"
-            value={exerciseName}
-            onChange={(e) => setExerciseName(e.target.value)}
-          />
-          <input className="border rounded px-2 py-2" type="number" placeholder="Weight (lb)" value={weight} onChange={(e) => setWeight(e.target.value)} />
-          <input className="border rounded px-2 py-2" type="number" placeholder="Reps" value={reps} onChange={(e) => setReps(e.target.value)} />
-          <input className="border rounded px-2 py-2 col-span-2" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <button className="col-span-2 bg-slate-900 text-white rounded px-3 py-2">Save</button>
+          <input className={inputClass + " col-span-2"} placeholder="Exercise" value={exerciseName} onChange={(e) => setExerciseName(e.target.value)} />
+          <input className={inputClass} type="number" placeholder="Weight (lb)" value={weight} onChange={(e) => setWeight(e.target.value)} />
+          <input className={inputClass} type="number" placeholder="Reps" value={reps} onChange={(e) => setReps(e.target.value)} />
+          <input className={inputClass + " col-span-2"} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <button className="col-span-2 bg-accent text-accenttext font-semibold rounded px-3 py-2 hover:bg-accentstrong transition-colors">Save</button>
         </form>
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold mb-2">History</h2>
+        <h2 className="font-display text-lg font-semibold mb-2">History</h2>
         <ul className="space-y-2">
           {logs.map((l) => (
-            <li key={l.id} className="bg-white border rounded p-3 flex justify-between">
+            <li key={l.id} className="bg-surface border border-edge rounded p-3 flex justify-between text-sm">
               <span>
                 {new Date(l.date).toLocaleDateString()} — {l.exerciseName}
               </span>
-              <span className="font-mono text-slate-500">{l.volumeLoad} lb·reps</span>
+              <span className="font-mono text-chalk">{l.volumeLoad} lb·reps</span>
             </li>
           ))}
         </ul>

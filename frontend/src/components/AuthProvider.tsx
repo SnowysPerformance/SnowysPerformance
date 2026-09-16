@@ -23,7 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.replace("/login");
   };
 
-  if (!user) return <div className="p-8 text-slate-500">Loading…</div>;
+  if (!user) return <div className="p-8 text-faint bg-void min-h-screen">Loading…</div>;
   return <AuthContext.Provider value={{ user, logout }}>{children}</AuthContext.Provider>;
 }
 

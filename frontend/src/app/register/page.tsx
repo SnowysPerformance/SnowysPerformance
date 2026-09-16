@@ -30,52 +30,38 @@ export default function RegisterPage() {
     }
   }
 
+  const inputClass = "w-full bg-inputbg border border-edge rounded px-3 py-2 text-sm placeholder-faint focus:border-accent outline-none";
+
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <form onSubmit={submit} className="bg-white p-8 rounded-lg shadow w-full max-w-sm space-y-4">
-        <h1 className="text-xl font-semibold">Create an account</h1>
+    <div className="min-h-screen flex items-center justify-center bg-void">
+      <form onSubmit={submit} className="bg-surface border border-edge p-8 rounded-lg shadow-lg w-full max-w-sm space-y-4">
+        <h1 className="font-display text-lg font-semibold">Create an account</h1>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setRole("COACH")}
-            className={`flex-1 rounded px-3 py-2 border ${role === "COACH" ? "bg-slate-900 text-white" : ""}`}
+            className={`flex-1 rounded px-3 py-2 text-sm border ${role === "COACH" ? "bg-accent text-accenttext border-accent font-semibold" : "border-edge text-muted"}`}
           >
             Coach
           </button>
           <button
             type="button"
             onClick={() => setRole("ATHLETE")}
-            className={`flex-1 rounded px-3 py-2 border ${role === "ATHLETE" ? "bg-slate-900 text-white" : ""}`}
+            className={`flex-1 rounded px-3 py-2 text-sm border ${role === "ATHLETE" ? "bg-accent text-accenttext border-accent font-semibold" : "border-edge text-muted"}`}
           >
             Athlete
           </button>
         </div>
-        {error && <div className="text-red-600 text-sm">{error}</div>}
+        {error && <div className="text-red-400 text-sm">{error}</div>}
         {role === "COACH" ? (
-          <input
-            className="w-full border rounded px-3 py-2"
-            placeholder="Team name"
-            value={form.teamName}
-            onChange={(e) => update("teamName", e.target.value)}
-          />
+          <input className={inputClass} placeholder="Team name" value={form.teamName} onChange={(e) => update("teamName", e.target.value)} />
         ) : (
-          <input
-            className="w-full border rounded px-3 py-2"
-            placeholder="Team ID (ask your coach)"
-            value={form.teamId}
-            onChange={(e) => update("teamId", e.target.value)}
-          />
+          <input className={inputClass} placeholder="Team ID (ask your coach)" value={form.teamId} onChange={(e) => update("teamId", e.target.value)} />
         )}
-        <input className="w-full border rounded px-3 py-2" placeholder="Your name" value={form.name} onChange={(e) => update("name", e.target.value)} />
-        <input className="w-full border rounded px-3 py-2" placeholder="Email" value={form.email} onChange={(e) => update("email", e.target.value)} />
-        <input
-          className="w-full border rounded px-3 py-2"
-          type="password"
-          placeholder="Password"
-          value={form.password}
-          onChange={(e) => update("password", e.target.value)}
-        />
-        <button className="w-full bg-slate-900 text-white rounded px-3 py-2">Create account</button>
+        <input className={inputClass} placeholder="Your name" value={form.name} onChange={(e) => update("name", e.target.value)} />
+        <input className={inputClass} placeholder="Email" value={form.email} onChange={(e) => update("email", e.target.value)} />
+        <input className={inputClass} type="password" placeholder="Password" value={form.password} onChange={(e) => update("password", e.target.value)} />
+        <button className="w-full bg-accent text-accenttext font-semibold rounded px-3 py-2 hover:bg-accentstrong transition-colors">Create account</button>
       </form>
     </div>
   );
