@@ -2,17 +2,23 @@
 import Link from "next/link";
 import { useAuth } from "./AuthProvider";
 
-const links = [
+const coachLinks = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/athletes", label: "Athletes" },
   { href: "/dashboard/programs", label: "Programs" },
-  { href: "/dashboard/workouts", label: "Workouts" },
+];
+
+const athleteLinks = [
+  { href: "/dashboard", label: "Overview" },
+  { href: "/dashboard/programs", label: "Your Plans" },
+  { href: "/dashboard/workouts", label: "Log" },
+  { href: "/dashboard/fatigue", label: "Progress" },
   { href: "/dashboard/tests", label: "Testing" },
-  { href: "/dashboard/fatigue", label: "Fatigue" },
 ];
 
 export default function NavBar() {
   const { user, logout } = useAuth();
+  const links = user?.role === "COACH" ? coachLinks : athleteLinks;
   return (
     <aside className="w-56 bg-surface border-r border-edge text-primary p-4 flex flex-col flex-shrink-0">
       <div className="flex items-center gap-2 font-display font-semibold mb-6">
