@@ -4,54 +4,359 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 
+const e1rm = (weight: number, reps: number) => (reps <= 1 ? weight : weight * (1 + reps / 30));
+const round5 = (n: number) => Math.round(n / 5) * 5;
+
+function computeBestE1rm(logs: any[]): Record<string, number> {
+  const best: Record<string, number> = {};
+  logs.forEach((l) => {
+    if (l.type && l.type !== "weighted") return;
+    const valid = (l.sets || []).filter((s: any) => s.weight > 0 && s.reps > 0);
+    if (!valid.length) return;
+    const top = Math.max(...valid.map((s: any) => e1rm(s.weight, s.reps)));
+    if (!best[l.exerciseName] || top > best[l.exerciseName]) best[l.exerciseName] = top;
+  });
+  return best;
+}
+function computedWeight(ex: any, bestE1rm: Record<string, number>): number | null {
+  if (ex.type && ex.type !== "weighted") return null;
+  if (ex.mode === "weight") return ex.weight || null;
+  const max = bestE1rm[ex.exerciseName];
+  if (!max || !ex.percentOfMax) return null;
+  return round5((max * ex.percentOfMax) / 100);
+}
+function targetLabel(ex: any, bestE1rm: Record<string, number>): string {
+  if (!ex.type || ex.type === "weighted") {
+    const w = computedWeight(ex, bestE1rm);
+    return w ? `${w} lb` : "need 1RM";
+  }
+  if (ex.type === "banded") return ex.band || "";
+  if (ex.type === "sprint") return `${ex.distance || ""}yd${ex.resisted ? " (resisted)" : ""}`;
+  return "—";
+}
+
+const inputClass = "bg-inputbg border border-edge rounded px-2 py-1.5 text-xs placeholder-faint focus:border-accent outline-none w-full";
+
 export default function ProgramDetailPage({ params }: { params: { id: string } }) {
   const { user } = useAuth();
   const router = useRouter();
+  const isCoach = user?.role === "COACH";
   const [program, setProgram] = useState<any>(null);
   const [error, setError] = useState("");
+  const [selectedPhaseId, setSelectedPhaseId] = useState<string | null>(null);
+  const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
+  const [bestE1rm, setBestE1rm] = useState<Record<string, number>>({});
+  const [previewAthleteId, setPreviewAthleteId] = useState("");
 
+  const [phaseForm, setPhaseForm] = useState({ name: "", weeks: "", goal: "" });
+  const [phaseFormOpen, setPhaseFormOpen] = useState(false);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [groupLabel, setGroupLabel] = useState("");
+
+  async function load() {
+    try {
+      setProgram(await api(`/api/programs/${params.id}`));
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
   useEffect(() => {
-    api(`/api/programs/${params.id}`)
-      .then(setProgram)
-      .catch((err) => setError(err.message));
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id]);
+
+  // Load 1RM data: athlete sees their own; coach picks an assigned athlete to preview against
+  useEffect(() => {
+    (async () => {
+      if (!program) return;
+      if (!isCoach) {
+        const logs = await api("/api/workouts");
+        setBestE1rm(computeBestE1rm(logs));
+        return;
+      }
+      const athleteId = previewAthleteId || program.assignments?.[0]?.athlete?.id;
+      if (!athleteId) return setBestE1rm({});
+      const logs = await api(`/api/workouts?athleteId=${athleteId}`);
+      setBestE1rm(computeBestE1rm(logs));
+    })();
+  }, [program, previewAthleteId, isCoach]);
 
   if (error) return <p className="text-red-400">{error}</p>;
   if (!program) return <p className="text-faint">Loading…</p>;
 
+  const phase = program.phases.find((p: any) => p.id === selectedPhaseId) || program.phases[0];
+  const week = phase?.microcycles.find((w: any) => w.id === selectedWeekId) || phase?.microcycles[0];
+
+  async function addPhase() {
+    if (!phaseForm.name.trim()) return;
+    await api(`/api/programs/${params.id}/phases`, { method: "POST", body: JSON.stringify(phaseForm) });
+    setPhaseForm({ name: "", weeks: "", goal: "" });
+    setPhaseFormOpen(false);
+    load();
+  }
+  async function deletePhase(phaseId: string) {
+    await api(`/api/programs/phases/${phaseId}`, { method: "DELETE" });
+    load();
+  }
+  async function addWeek(phaseId: string) {
+    const w = await api(`/api/programs/phases/${phaseId}/weeks`, { method: "POST", body: JSON.stringify({}) });
+    setSelectedPhaseId(phaseId);
+    setSelectedWeekId(w.id);
+    load();
+  }
+  async function duplicateWeek(weekId: string) {
+    const w = await api(`/api/programs/weeks/${weekId}/duplicate`, { method: "POST" });
+    setSelectedWeekId(w.id);
+    load();
+  }
+  async function deleteWeek(weekId: string) {
+    await api(`/api/programs/weeks/${weekId}`, { method: "DELETE" });
+    load();
+  }
+  async function addExercise(dayId: string) {
+    await api(`/api/programs/days/${dayId}/exercises`, { method: "POST", body: JSON.stringify({ exerciseName: "", type: "weighted", mode: "percent" }) });
+    load();
+  }
+  async function updateExercise(exerciseId: string, patch: any) {
+    await api(`/api/programs/exercises/${exerciseId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    load();
+  }
+  async function deleteExercise(exerciseId: string) {
+    await api(`/api/programs/exercises/${exerciseId}`, { method: "DELETE" });
+    load();
+  }
+  async function groupSelected(dayId: string) {
+    const ids = Object.keys(selected).filter((k) => selected[k]);
+    if (ids.length < 1) return;
+    await api(`/api/programs/days/${dayId}/group`, { method: "POST", body: JSON.stringify({ exerciseIds: ids, label: groupLabel || "Group" }) });
+    setSelected({});
+    setGroupLabel("");
+    load();
+  }
+  async function ungroup(dayId: string, groupId: string) {
+    await api(`/api/programs/days/${dayId}/group/${groupId}/ungroup`, { method: "POST" });
+    load();
+  }
   function logThis(exerciseName: string) {
     router.push(`/dashboard/workouts?exercise=${encodeURIComponent(exerciseName)}`);
   }
 
+  function buildBlocks(day: any) {
+    const seen = new Set<string>();
+    const blocks: any[] = [];
+    let letterIdx = 0;
+    day.exercises.forEach((ex: any) => {
+      if (ex.groupId) {
+        if (seen.has(ex.groupId)) return;
+        seen.add(ex.groupId);
+        const members = day.exercises.filter((x: any) => x.groupId === ex.groupId);
+        blocks.push({ type: "group", groupId: ex.groupId, label: ex.groupLabel, letter: String.fromCharCode(65 + letterIdx++), members });
+      } else blocks.push({ type: "single", ex });
+    });
+    return blocks;
+  }
+
   return (
     <div>
-      <h1 className="font-display text-xl font-semibold mb-4">{program.name}</h1>
-      {program.weeks.map((w: any) => (
-        <div key={w.id} className="mb-6">
-          <h2 className="font-medium mb-2 text-muted">{w.name || `Week ${w.weekNumber}`}</h2>
-          {w.days.length === 0 && <p className="text-faint text-sm">No days added yet.</p>}
-          {w.days.map((d: any) => (
-            <div key={d.id} className="bg-surface border border-edge rounded p-3 mb-2">
-              <div className="font-medium">{d.name || `Day ${d.dayOfWeek}`}</div>
-              <ul className="text-sm text-muted mt-1 space-y-1">
-                {d.exercises.map((ex: any) => (
-                  <li key={ex.id} className="flex items-center justify-between">
-                    <span>
-                      {ex.exerciseName} — {ex.sets}x{ex.reps}
-                      {ex.percentOfMax ? ` @ ${ex.percentOfMax}%` : ""}
-                    </span>
-                    {user?.role === "ATHLETE" && (
-                      <button onClick={() => logThis(ex.exerciseName)} className="text-xs underline text-accent ml-3 flex-shrink-0">
-                        Log this
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
+      <h1 className="font-display text-xl font-semibold mb-1">{program.name}</h1>
+      {isCoach && program.assignments?.length > 0 && (
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-xs text-faint">Preview 1RM for:</span>
+          <select className={inputClass} style={{ width: 200 }} value={previewAthleteId} onChange={(e) => setPreviewAthleteId(e.target.value)}>
+            {program.assignments.map((a: any) => (
+              <option key={a.athlete.id} value={a.athlete.id}>{a.athlete.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Phases */}
+      <div className="bg-surface border border-edge rounded-lg p-4 mb-4">
+        <div className="flex justify-between items-center mb-3">
+          <span className="font-display text-xs uppercase tracking-wide text-muted">Phases</span>
+          {isCoach && <button onClick={() => setPhaseFormOpen((o) => !o)} className="text-xs text-accent underline">+ Add phase</button>}
+        </div>
+        {phaseFormOpen && (
+          <div className="flex gap-2 mb-3">
+            <input className={inputClass} placeholder="Phase name" value={phaseForm.name} onChange={(e) => setPhaseForm((f) => ({ ...f, name: e.target.value }))} />
+            <input className={inputClass} style={{ maxWidth: 80 }} placeholder="Weeks" value={phaseForm.weeks} onChange={(e) => setPhaseForm((f) => ({ ...f, weeks: e.target.value }))} />
+            <input className={inputClass} placeholder="Goal" value={phaseForm.goal} onChange={(e) => setPhaseForm((f) => ({ ...f, goal: e.target.value }))} />
+            <button onClick={addPhase} className="bg-accent text-accenttext text-xs font-semibold rounded px-3 py-1.5 flex-shrink-0">Create</button>
+          </div>
+        )}
+        <div className="flex gap-2 overflow-x-auto">
+          {program.phases.map((p: any) => (
+            <div
+              key={p.id}
+              onClick={() => { setSelectedPhaseId(p.id); setSelectedWeekId(null); }}
+              className={`flex-shrink-0 min-w-[130px] rounded-lg border p-3 cursor-pointer relative ${p.id === phase?.id ? "border-accent bg-raised" : "border-edgesoft bg-void"}`}
+            >
+              {isCoach && (
+                <button onClick={(e) => { e.stopPropagation(); deletePhase(p.id); }} className="absolute top-1 right-1 text-faint hover:text-red-400 text-xs">✕</button>
+              )}
+              <div className="font-display text-sm font-semibold pr-4">{p.name}</div>
+              {p.goal && <div className="text-xs text-muted mt-1">{p.goal}</div>}
             </div>
           ))}
+          {program.phases.length === 0 && <p className="text-faint text-xs">No phases yet.</p>}
         </div>
-      ))}
+      </div>
+
+      {/* Weeks */}
+      {phase && (
+        <div className="bg-surface border border-edge rounded-lg p-4 mb-4">
+          <div className="font-display text-xs uppercase tracking-wide text-muted mb-3">{phase.name} — Weeks</div>
+          <div className="flex gap-3 overflow-x-auto items-start">
+            {phase.microcycles.map((w: any) => (
+              <div key={w.id} className="relative flex-shrink-0">
+                {isCoach && (
+                  <div className="absolute -top-2 -right-2 flex gap-1 z-10">
+                    <button onClick={() => duplicateWeek(w.id)} title="Duplicate" className="w-4 h-4 rounded-full bg-raised border border-edge text-[9px] text-faint hover:text-accent flex items-center justify-center">⧉</button>
+                    <button onClick={() => deleteWeek(w.id)} title="Delete" className="w-4 h-4 rounded-full bg-raised border border-edge text-[9px] text-faint hover:text-red-400 flex items-center justify-center">✕</button>
+                  </div>
+                )}
+                <button
+                  onClick={() => setSelectedWeekId(w.id)}
+                  className={`min-w-[70px] rounded-lg border px-3 py-2 text-xs font-semibold ${w.id === week?.id ? "border-accent bg-raised text-primary" : "border-edgesoft bg-void text-muted"}`}
+                >
+                  {w.name}
+                </button>
+              </div>
+            ))}
+            {isCoach && (
+              <button onClick={() => addWeek(phase.id)} className="text-xs text-accent underline flex-shrink-0 self-center">+ Add week</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Days */}
+      {week && (
+        <div className="bg-surface border border-edge rounded-lg p-4">
+          <div className="font-display text-xs uppercase tracking-wide text-muted mb-3">{phase.name} · {week.name} — Day by Day</div>
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {week.days.map((day: any) => {
+              const blocks = buildBlocks(day);
+              return (
+                <div key={day.id} className="min-w-[230px] max-w-[250px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3">
+                  <div className="font-display text-xs font-bold text-accent uppercase mb-2">{day.label}</div>
+                  <div className="space-y-2 max-h-[420px] overflow-y-auto">
+                    {day.exercises.length === 0 && <div className="text-faint text-xs text-center py-3">Rest day</div>}
+                    {blocks.map((b: any) =>
+                      b.type === "single" ? (
+                        <ExerciseCard
+                          key={b.ex.id}
+                          ex={b.ex}
+                          isCoach={isCoach}
+                          bestE1rm={bestE1rm}
+                          selected={!!selected[b.ex.id]}
+                          onToggleSelect={() => setSelected((s) => ({ ...s, [b.ex.id]: !s[b.ex.id] }))}
+                          onUpdate={(patch: any) => updateExercise(b.ex.id, patch)}
+                          onDelete={() => deleteExercise(b.ex.id)}
+                          onLogThis={() => logThis(b.ex.exerciseName)}
+                        />
+                      ) : (
+                        <div key={b.groupId} className="border border-dashed border-accent bg-accentsoft rounded-lg p-2" style={{ background: "rgba(126,200,227,0.08)" }}>
+                          <div className="flex justify-between items-center mb-1.5">
+                            <span className="text-[10px] font-bold text-accent uppercase">{b.label}</span>
+                            {isCoach && <button onClick={() => ungroup(day.id, b.groupId)} className="text-faint hover:text-red-400 text-xs">✕</button>}
+                          </div>
+                          {b.members.map((m: any, i: number) => (
+                            <div key={m.id} className="mb-1.5">
+                              <div className="text-[10px] text-faint font-bold mb-0.5">{b.letter}{i + 1}</div>
+                              <ExerciseCard
+                                ex={m}
+                                isCoach={isCoach}
+                                bestE1rm={bestE1rm}
+                                selected={!!selected[m.id]}
+                                onToggleSelect={() => setSelected((s) => ({ ...s, [m.id]: !s[m.id] }))}
+                                onUpdate={(patch: any) => updateExercise(m.id, patch)}
+                                onDelete={() => deleteExercise(m.id)}
+                                onLogThis={() => logThis(m.exerciseName)}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    )}
+                  </div>
+                  {isCoach && Object.values(selected).some(Boolean) && (
+                    <div className="flex gap-1 mt-2">
+                      <input className={inputClass} placeholder="Group label" value={groupLabel} onChange={(e) => setGroupLabel(e.target.value)} />
+                      <button onClick={() => groupSelected(day.id)} className="text-xs bg-accent text-accenttext rounded px-2 flex-shrink-0">Group</button>
+                    </div>
+                  )}
+                  {isCoach && (
+                    <button onClick={() => addExercise(day.id)} className="w-full text-xs border border-edge rounded px-2 py-1.5 mt-2 text-muted hover:text-primary">+ Add exercise</button>
+                  )}
+                  {!isCoach && day.exercises.length > 0 && (
+                    <button onClick={() => logThis(day.exercises[0]?.exerciseName)} className="w-full text-xs bg-accent text-accenttext font-semibold rounded px-2 py-1.5 mt-2">
+                      Log this day
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExerciseCard({ ex, isCoach, bestE1rm, selected, onToggleSelect, onUpdate, onDelete, onLogThis }: any) {
+  const isTimeBased = ex.type === "timed" || ex.type === "sprint";
+  if (!isCoach) {
+    return (
+      <div className="bg-surface border border-edgesoft rounded p-2">
+        <div className="text-xs font-semibold flex items-center gap-1 flex-wrap">
+          {ex.exerciseName}
+          {ex.methodName && <span className="text-[10px] bg-raised text-faint rounded px-1">{ex.methodName}</span>}
+          {ex.isWarmup && <span className="text-[10px] bg-raised text-faint rounded px-1">Warm-up</span>}
+          {ex.isTest && <span className="text-[10px] bg-raised text-accent rounded px-1">Test</span>}
+        </div>
+        <div className="text-[11px] text-muted mt-1">
+          {ex.sets || "?"}x{isTimeBased ? `${ex.duration || "?"}s` : ex.reps || "?"} — {targetLabel(ex, bestE1rm)}
+        </div>
+        <button onClick={onLogThis} className="text-[10px] text-accent underline mt-1">Log this</button>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-surface border border-edgesoft rounded p-2 space-y-1">
+      <div className="flex items-center gap-1">
+        <input type="checkbox" checked={selected} onChange={onToggleSelect} className="flex-shrink-0" />
+        <input className={inputClass} list="ex-lib" placeholder="Exercise" value={ex.exerciseName} onChange={(e) => onUpdate({ exerciseName: e.target.value })} />
+      </div>
+      <input className={inputClass} placeholder="Method" value={ex.methodName || ""} onChange={(e) => onUpdate({ methodName: e.target.value })} />
+      <select className={inputClass} value={ex.type} onChange={(e) => onUpdate({ type: e.target.value })}>
+        <option value="weighted">Weighted</option>
+        <option value="bodyweight">Bodyweight</option>
+        <option value="banded">Banded</option>
+        <option value="sprint">Sprint</option>
+        <option value="timed">Timed</option>
+      </select>
+      {ex.type === "weighted" && (
+        <select className={inputClass} value={ex.mode} onChange={(e) => onUpdate({ mode: e.target.value })}>
+          <option value="percent">% of 1RM</option>
+          <option value="weight">Fixed weight</option>
+        </select>
+      )}
+      {ex.type === "banded" && <input className={inputClass} placeholder="Band" value={ex.band || ""} onChange={(e) => onUpdate({ band: e.target.value })} />}
+      {ex.type === "sprint" && <input className={inputClass} placeholder="Distance (yd)" value={ex.distance || ""} onChange={(e) => onUpdate({ distance: e.target.value })} />}
+      <div className="flex gap-1">
+        <input className={inputClass} type="number" placeholder="Sets" value={ex.sets || ""} onChange={(e) => onUpdate({ sets: e.target.value })} />
+        {!isTimeBased && <input className={inputClass} type="number" placeholder="Reps" value={ex.reps || ""} onChange={(e) => onUpdate({ reps: e.target.value })} />}
+        {ex.type === "weighted" && ex.mode === "percent" && <input className={inputClass} type="number" placeholder="%1RM" value={ex.percentOfMax || ""} onChange={(e) => onUpdate({ percentOfMax: e.target.value })} />}
+        {ex.type === "weighted" && ex.mode === "weight" && <input className={inputClass} type="number" placeholder="Wt" value={ex.weight || ""} onChange={(e) => onUpdate({ weight: e.target.value })} />}
+      </div>
+      {ex.type === "weighted" && <div className="text-[11px] bg-chalksoft text-chalk rounded px-2 py-1 text-center" style={{ background: "rgba(227,178,60,0.16)", color: "#E3B23C" }}>{targetLabel(ex, bestE1rm)}</div>}
+      <div className="flex gap-2 items-center flex-wrap text-[10px] text-faint">
+        <label className="flex items-center gap-1"><input type="checkbox" checked={ex.isWarmup} onChange={(e) => onUpdate({ isWarmup: e.target.checked })} /> Warm-up</label>
+        <label className="flex items-center gap-1 text-accent"><input type="checkbox" checked={ex.isTest} onChange={(e) => onUpdate({ isTest: e.target.checked })} /> Test</label>
+      </div>
+      <input className={inputClass} type="number" placeholder="Rest (sec)" value={ex.restSeconds || ""} onChange={(e) => onUpdate({ restSeconds: e.target.value })} />
+      <button onClick={onDelete} className="text-[10px] text-faint hover:text-red-400 w-full text-right">Delete</button>
     </div>
   );
 }

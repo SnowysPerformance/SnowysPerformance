@@ -22,7 +22,7 @@ export default function ProgramsPage() {
     e.preventDefault();
     await api("/api/programs", {
       method: "POST",
-      body: JSON.stringify({ name, weeks: [{ weekNumber: 1, name: "Week 1", days: [] }] }),
+      body: JSON.stringify({ name }),
     });
     setName("");
     load();

@@ -1,38 +1,13 @@
 import { Request, Response } from "express";
 import { prisma } from "../db";
 
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
 export async function createProgram(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Only coaches can create programs" });
-  const { name, weeks } = req.body;
-
+  const { name } = req.body;
   const program = await prisma.program.create({
-    data: {
-      name,
-      teamId: req.user!.teamId,
-      createdById: req.user!.userId,
-      weeks: {
-        create: (weeks || []).map((w: any) => ({
-          weekNumber: w.weekNumber,
-          name: w.name,
-          days: {
-            create: (w.days || []).map((d: any) => ({
-              dayOfWeek: d.dayOfWeek,
-              name: d.name,
-              exercises: {
-                create: (d.exercises || []).map((ex: any) => ({
-                  exerciseName: ex.exerciseName,
-                  sets: ex.sets,
-                  reps: ex.reps,
-                  percentOfMax: ex.percentOfMax,
-                  notes: ex.notes,
-                })),
-              },
-            })),
-          },
-        })),
-      },
-    },
-    include: { weeks: { include: { days: { include: { exercises: true } } } } },
+    data: { name, teamId: req.user!.teamId, createdById: req.user!.userId },
   });
   res.status(201).json(program);
 }
@@ -53,35 +28,46 @@ export async function listPrograms(req: Request, res: Response) {
   res.json(programs);
 }
 
-export async function getProgram(req: Request, res: Response) {
-  const program = await prisma.program.findUnique({
-    where: { id: req.params.id },
+const fullInclude = {
+  phases: {
+    orderBy: { order: "asc" as const },
     include: {
-      weeks: { include: { days: { include: { exercises: true } } }, orderBy: { weekNumber: "asc" } },
-      assignments: { include: { athlete: { select: { id: true, name: true } } } },
+      microcycles: {
+        include: { days: { include: { exercises: { orderBy: { order: "asc" as const } } } } },
+      },
     },
-  });
+  },
+  assignments: { include: { athlete: { select: { id: true, name: true } } } },
+};
+
+export async function getProgram(req: Request, res: Response) {
+  const program = await prisma.program.findUnique({ where: { id: req.params.id }, include: fullInclude });
   if (!program || program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
 
   if (req.user!.role === "ATHLETE") {
     const isAssigned = program.assignments.some((a) => a.athleteId === req.user!.userId);
     if (!isAssigned) return res.status(403).json({ error: "This program hasn't been assigned to you" });
   }
-
   res.json(program);
+}
+
+export async function deleteProgram(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const program = await prisma.program.findUnique({ where: { id: req.params.id } });
+  if (!program || program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+  await prisma.program.delete({ where: { id: program.id } });
+  res.status(204).send();
 }
 
 export async function assignProgram(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
   const program = await prisma.program.findUnique({ where: { id: req.params.id } });
   if (!program || program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Program not found" });
-
   const { athleteId } = req.body;
   const athlete = await prisma.user.findUnique({ where: { id: athleteId } });
   if (!athlete || athlete.teamId !== req.user!.teamId || athlete.role !== "ATHLETE") {
     return res.status(404).json({ error: "Athlete not found on your team" });
   }
-
   const assignment = await prisma.programAssignment.upsert({
     where: { programId_athleteId: { programId: program.id, athleteId } },
     update: {},
@@ -94,41 +80,202 @@ export async function unassignProgram(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
   const program = await prisma.program.findUnique({ where: { id: req.params.id } });
   if (!program || program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Program not found" });
-
   await prisma.programAssignment.deleteMany({ where: { programId: program.id, athleteId: req.params.athleteId } });
   res.status(204).send();
 }
 
+// ---------- phases (mesocycles) ----------
+
+export async function addPhase(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const program = await prisma.program.findUnique({ where: { id: req.params.id }, include: { phases: true } });
+  if (!program || program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+  const { name, weeks, goal } = req.body;
+  const phase = await prisma.programPhase.create({
+    data: { programId: program.id, name, weeks: weeks ? Number(weeks) : null, goal, order: program.phases.length },
+  });
+  res.status(201).json(phase);
+}
+
+export async function deletePhase(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const phase = await prisma.programPhase.findUnique({ where: { id: req.params.phaseId }, include: { program: true } });
+  if (!phase || phase.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+  await prisma.programPhase.delete({ where: { id: phase.id } });
+  res.status(204).send();
+}
+
+// ---------- weeks (microcycles) — auto-creates 7 days ----------
+
 export async function addWeek(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
-  const program = await prisma.program.findUnique({ where: { id: req.params.id } });
-  if (!program || program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+  const phase = await prisma.programPhase.findUnique({
+    where: { id: req.params.phaseId },
+    include: { program: true, microcycles: true },
+  });
+  if (!phase || phase.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
 
-  const { weekNumber, name } = req.body;
-  const week = await prisma.programWeek.create({ data: { programId: program.id, weekNumber, name } });
+  const name = req.body.name || `Week ${phase.microcycles.length + 1}`;
+  const week = await prisma.programWeek.create({
+    data: {
+      programId: phase.programId,
+      phaseId: phase.id,
+      weekNumber: phase.microcycles.length + 1,
+      name,
+      days: { create: DAY_LABELS.map((label, i) => ({ dayOfWeek: i, label })) },
+    },
+    include: { days: { include: { exercises: true } } },
+  });
   res.status(201).json(week);
 }
 
-export async function addDay(req: Request, res: Response) {
+export async function duplicateWeek(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
-  const { dayOfWeek, name } = req.body;
-  const day = await prisma.programDay.create({ data: { weekId: req.params.weekId, dayOfWeek, name } });
-  res.status(201).json(day);
+  const week = await prisma.programWeek.findUnique({
+    where: { id: req.params.weekId },
+    include: { program: true, days: { include: { exercises: true } } },
+  });
+  if (!week || week.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+
+  const cloned = await prisma.programWeek.create({
+    data: {
+      programId: week.programId,
+      phaseId: week.phaseId,
+      weekNumber: week.weekNumber + 1,
+      name: `${week.name || "Week"} copy`,
+      days: {
+        create: week.days.map((d) => ({
+          dayOfWeek: d.dayOfWeek,
+          label: d.label,
+          name: d.name,
+          exercises: {
+            create: d.exercises.map((ex) => ({
+              exerciseName: ex.exerciseName, type: ex.type, mode: ex.mode, sets: ex.sets, reps: ex.reps,
+              percentOfMax: ex.percentOfMax, weight: ex.weight, methodName: ex.methodName, band: ex.band,
+              distance: ex.distance, resisted: ex.resisted, resistance: ex.resistance, restSeconds: ex.restSeconds,
+              isWarmup: ex.isWarmup, isTest: ex.isTest, groupId: ex.groupId, groupLabel: ex.groupLabel, order: ex.order,
+            })),
+          },
+        })),
+      },
+    },
+    include: { days: { include: { exercises: true } } },
+  });
+  res.status(201).json(cloned);
+}
+
+export async function deleteWeek(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const week = await prisma.programWeek.findUnique({ where: { id: req.params.weekId }, include: { program: true } });
+  if (!week || week.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+  await prisma.programWeek.delete({ where: { id: week.id } });
+  res.status(204).send();
+}
+
+// ---------- exercises ----------
+
+async function verifyDayOwnership(dayId: string, teamId: string) {
+  const day = await prisma.programDay.findUnique({ where: { id: dayId }, include: { week: { include: { program: true } } } });
+  if (!day || day.week.program.teamId !== teamId) return null;
+  return day;
 }
 
 export async function addExercise(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
-  const { exerciseName, sets, reps, percentOfMax, notes } = req.body;
+  const day = await verifyDayOwnership(req.params.dayId, req.user!.teamId);
+  if (!day) return res.status(404).json({ error: "Not found" });
+
+  const b = req.body;
   const exercise = await prisma.programExercise.create({
-    data: { dayId: req.params.dayId, exerciseName, sets, reps, percentOfMax, notes },
+    data: {
+      dayId: day.id,
+      exerciseName: b.exerciseName || "",
+      type: b.type || "weighted",
+      mode: b.mode || "percent",
+      sets: b.sets ? Number(b.sets) : null,
+      reps: b.reps ? Number(b.reps) : null,
+      percentOfMax: b.percentOfMax ? Number(b.percentOfMax) : null,
+      weight: b.weight ? Number(b.weight) : null,
+      methodName: b.methodName || null,
+      band: b.band || null,
+      distance: b.distance || null,
+      resisted: !!b.resisted,
+      resistance: b.resistance || null,
+      restSeconds: b.restSeconds || null,
+      isWarmup: !!b.isWarmup,
+      isTest: !!b.isTest,
+      notes: b.notes || null,
+    },
   });
   res.status(201).json(exercise);
 }
 
-export async function deleteProgram(req: Request, res: Response) {
+export async function updateExercise(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
-  const program = await prisma.program.findUnique({ where: { id: req.params.id } });
-  if (!program || program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
-  await prisma.program.delete({ where: { id: program.id } });
+  const existing = await prisma.programExercise.findUnique({
+    where: { id: req.params.exerciseId },
+    include: { day: { include: { week: { include: { program: true } } } } },
+  });
+  if (!existing || existing.day.week.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+
+  const b = req.body;
+  const updated = await prisma.programExercise.update({
+    where: { id: existing.id },
+    data: {
+      exerciseName: b.exerciseName ?? existing.exerciseName,
+      type: b.type ?? existing.type,
+      mode: b.mode ?? existing.mode,
+      sets: b.sets !== undefined ? (b.sets ? Number(b.sets) : null) : existing.sets,
+      reps: b.reps !== undefined ? (b.reps ? Number(b.reps) : null) : existing.reps,
+      percentOfMax: b.percentOfMax !== undefined ? (b.percentOfMax ? Number(b.percentOfMax) : null) : existing.percentOfMax,
+      weight: b.weight !== undefined ? (b.weight ? Number(b.weight) : null) : existing.weight,
+      methodName: b.methodName !== undefined ? b.methodName : existing.methodName,
+      band: b.band !== undefined ? b.band : existing.band,
+      distance: b.distance !== undefined ? b.distance : existing.distance,
+      resisted: b.resisted !== undefined ? !!b.resisted : existing.resisted,
+      resistance: b.resistance !== undefined ? b.resistance : existing.resistance,
+      restSeconds: b.restSeconds !== undefined ? b.restSeconds : existing.restSeconds,
+      isWarmup: b.isWarmup !== undefined ? !!b.isWarmup : existing.isWarmup,
+      isTest: b.isTest !== undefined ? !!b.isTest : existing.isTest,
+      groupId: b.groupId !== undefined ? b.groupId : existing.groupId,
+      groupLabel: b.groupLabel !== undefined ? b.groupLabel : existing.groupLabel,
+    },
+  });
+  res.json(updated);
+}
+
+export async function deleteExercise(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const existing = await prisma.programExercise.findUnique({
+    where: { id: req.params.exerciseId },
+    include: { day: { include: { week: { include: { program: true } } } } },
+  });
+  if (!existing || existing.day.week.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+  await prisma.programExercise.delete({ where: { id: existing.id } });
+  res.status(204).send();
+}
+
+// group / ungroup a set of exercises within the same day into a labeled superset
+export async function groupExercises(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const day = await verifyDayOwnership(req.params.dayId, req.user!.teamId);
+  if (!day) return res.status(404).json({ error: "Not found" });
+  const { exerciseIds, label } = req.body as { exerciseIds: string[]; label: string };
+  const groupId = `grp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await prisma.programExercise.updateMany({
+    where: { id: { in: exerciseIds }, dayId: day.id },
+    data: { groupId, groupLabel: label || "Group" },
+  });
+  res.status(200).json({ groupId });
+}
+
+export async function ungroupExercises(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const day = await verifyDayOwnership(req.params.dayId, req.user!.teamId);
+  if (!day) return res.status(404).json({ error: "Not found" });
+  await prisma.programExercise.updateMany({
+    where: { dayId: day.id, groupId: req.params.groupId },
+    data: { groupId: null, groupLabel: null },
+  });
   res.status(204).send();
 }
