@@ -1,30 +1,73 @@
 import { Request, Response } from "express";
 import { prisma } from "../db";
 
-function computeVolumeLoad(sets: any): number {
+function computeVolumeLoad(type: string, sets: any): number {
+  if (type !== "weighted") return 0;
   if (!Array.isArray(sets)) return 0;
   return sets.reduce((sum: number, s: any) => sum + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0);
 }
 
+function buildTestValue(type: string, sets: any): { value: number; unit: string } {
+  const rows = Array.isArray(sets) ? sets : [];
+  if (type === "weighted") {
+    const valid = rows.filter((s: any) => s.weight > 0 && s.reps > 0);
+    return { value: valid.length ? Math.max(...valid.map((s: any) => s.weight)) : 0, unit: "lb" };
+  }
+  if (type === "bodyweight" || type === "banded") {
+    const reps = rows.map((s: any) => s.reps || 0);
+    return { value: reps.length ? Math.max(...reps) : 0, unit: "reps" };
+  }
+  if (type === "sprint") {
+    const times = rows.map((s: any) => s.duration).filter((x: any) => x > 0);
+    return { value: times.length ? Math.min(...times) : 0, unit: "sec" };
+  }
+  const times = rows.map((s: any) => s.duration || 0);
+  return { value: times.length ? Math.max(...times) : 0, unit: "sec" };
+}
+
 export async function createWorkoutLog(req: Request, res: Response) {
-  const { athleteId, date, exerciseName, sets, notes } = req.body;
+  const {
+    athleteId, date, label, exerciseName, type,
+    methodName, band, distance, resisted, resistance,
+    restSeconds, isWarmup, isTest, sets, notes,
+  } = req.body;
 
   if (req.user!.role === "ATHLETE" && athleteId && athleteId !== req.user!.userId) {
     return res.status(403).json({ error: "Athletes can only log their own workouts" });
   }
   const targetAthleteId = req.user!.role === "COACH" ? (athleteId || req.user!.userId) : req.user!.userId;
+  const t = type || "weighted";
 
   const log = await prisma.workoutLog.create({
     data: {
       teamId: req.user!.teamId,
       athleteId: targetAthleteId,
       date: new Date(date),
+      label: label || null,
       exerciseName,
+      type: t,
+      methodName: methodName || null,
+      band: band || null,
+      distance: distance || null,
+      resisted: !!resisted,
+      resistance: resistance || null,
+      restSeconds: restSeconds || null,
+      isWarmup: !!isWarmup,
+      isTest: !!isTest,
       sets,
-      volumeLoad: computeVolumeLoad(sets),
+      volumeLoad: computeVolumeLoad(t, sets),
       notes,
     },
   });
+
+  // Marked as a test? Also drop it into TestResult so it shows on the Testing tab automatically.
+  if (isTest) {
+    const { value, unit } = buildTestValue(t, sets);
+    await prisma.testResult.create({
+      data: { teamId: req.user!.teamId, athleteId: targetAthleteId, testType: exerciseName, unit, date: new Date(date), value },
+    });
+  }
+
   res.status(201).json(log);
 }
 

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -56,8 +57,11 @@ export default function AthletesPage() {
         <h2 className="font-display text-lg font-semibold mb-3">Athletes</h2>
         <ul className="space-y-2">
           {athletes.map((a) => (
-            <li key={a.id} className="bg-surface border border-edge rounded p-3 text-sm">
-              {a.name} — <span className="text-faint">{a.email}</span>
+            <li key={a.id}>
+              <Link href={`/dashboard/athletes/${a.id}`} className="block bg-surface border border-edge rounded p-3 text-sm hover:border-accent transition-colors">
+                <span className="font-medium">{a.name}</span> — <span className="text-faint">{a.email}</span>
+                <span className="float-right text-accent text-xs">View profile →</span>
+              </Link>
             </li>
           ))}
         </ul>

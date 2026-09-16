@@ -95,7 +95,17 @@ model WorkoutLog {
   athleteId    String
   athlete      User     @relation(fields: [athleteId], references: [id])
   date         DateTime
+  label        String?
   exerciseName String
+  type         String   @default("weighted")
+  methodName   String?
+  band         String?
+  distance     String?
+  resisted     Boolean  @default(false)
+  resistance   String?
+  restSeconds  String?
+  isWarmup     Boolean  @default(false)
+  isTest       Boolean  @default(false)
   sets         Json
   volumeLoad   Float
   notes        String?
