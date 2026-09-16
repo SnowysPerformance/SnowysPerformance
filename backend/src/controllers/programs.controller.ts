@@ -122,11 +122,27 @@ export async function addWeek(req: Request, res: Response) {
       phaseId: phase.id,
       weekNumber: phase.microcycles.length + 1,
       name,
+      startDate: req.body.startDate ? new Date(req.body.startDate) : null,
       days: { create: DAY_LABELS.map((label, i) => ({ dayOfWeek: i, label })) },
     },
     include: { days: { include: { exercises: true } } },
   });
   res.status(201).json(week);
+}
+
+export async function updateWeek(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const week = await prisma.programWeek.findUnique({ where: { id: req.params.weekId }, include: { program: true } });
+  if (!week || week.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+
+  const updated = await prisma.programWeek.update({
+    where: { id: week.id },
+    data: {
+      name: req.body.name !== undefined ? req.body.name : week.name,
+      startDate: req.body.startDate !== undefined ? (req.body.startDate ? new Date(req.body.startDate) : null) : week.startDate,
+    },
+  });
+  res.json(updated);
 }
 
 export async function duplicateWeek(req: Request, res: Response) {
@@ -137,12 +153,15 @@ export async function duplicateWeek(req: Request, res: Response) {
   });
   if (!week || week.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
 
+  const nextStartDate = week.startDate ? new Date(week.startDate.getTime() + 7 * 24 * 60 * 60 * 1000) : null;
+
   const cloned = await prisma.programWeek.create({
     data: {
       programId: week.programId,
       phaseId: week.phaseId,
       weekNumber: week.weekNumber + 1,
       name: `${week.name || "Week"} copy`,
+      startDate: nextStartDate,
       days: {
         create: week.days.map((d) => ({
           dayOfWeek: d.dayOfWeek,

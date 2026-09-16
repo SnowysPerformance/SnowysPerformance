@@ -79,6 +79,7 @@ model ProgramWeek {
   phase      ProgramPhase? @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   weekNumber Int
   name       String?
+  startDate  DateTime?
 
   days ProgramDay[]
 }

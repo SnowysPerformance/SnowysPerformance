@@ -16,6 +16,7 @@ router.post("/:id/phases", ctrl.addPhase);
 router.delete("/phases/:phaseId", ctrl.deletePhase);
 
 router.post("/phases/:phaseId/weeks", ctrl.addWeek);
+router.patch("/weeks/:weekId", ctrl.updateWeek);
 router.post("/weeks/:weekId/duplicate", ctrl.duplicateWeek);
 router.delete("/weeks/:weekId", ctrl.deleteWeek);
 

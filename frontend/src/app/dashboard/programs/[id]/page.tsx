@@ -20,7 +20,7 @@ function computeBestE1rm(logs: any[]): Record<string, number> {
 }
 function computedWeight(ex: any, bestE1rm: Record<string, number>): number | null {
   if (ex.type && ex.type !== "weighted") return null;
-  if (ex.mode === "weight") return ex.weight || null;
+  if (ex.weight) return ex.weight; // a directly-entered weight always wins
   const max = bestE1rm[ex.exerciseName];
   if (!max || !ex.percentOfMax) return null;
   return round5((max * ex.percentOfMax) / 100);
@@ -233,13 +233,36 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
       {/* Days */}
       {week && (
         <div className="bg-surface border border-edge rounded-lg p-4">
-          <div className="font-display text-xs uppercase tracking-wide text-muted mb-3">{phase.name} · {week.name} — Day by Day</div>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="font-display text-xs uppercase tracking-wide text-muted">{phase.name} · {week.name} — Day by Day</div>
+            {isCoach && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-faint">Week starts:</span>
+                <input
+                  type="date"
+                  className={inputClass}
+                  style={{ width: 140 }}
+                  value={week.startDate ? week.startDate.slice(0, 10) : ""}
+                  onChange={async (e) => {
+                    await api(`/api/programs/weeks/${week.id}`, { method: "PATCH", body: JSON.stringify({ startDate: e.target.value || null }) });
+                    load();
+                  }}
+                />
+              </div>
+            )}
+          </div>
           <div className="flex gap-3 overflow-x-auto pb-2">
             {week.days.map((day: any) => {
               const blocks = buildBlocks(day);
+              const dayDate = week.startDate
+                ? new Date(new Date(week.startDate).getTime() + day.dayOfWeek * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+                : null;
               return (
                 <div key={day.id} className="min-w-[230px] max-w-[250px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3">
-                  <div className="font-display text-xs font-bold text-accent uppercase mb-2">{day.label}</div>
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="font-display text-xs font-bold text-accent uppercase">{day.label}</span>
+                    {dayDate && <span className="text-[10px] text-faint">{dayDate}</span>}
+                  </div>
                   <div className="space-y-2 max-h-[420px] overflow-y-auto">
                     {day.exercises.length === 0 && <div className="text-faint text-xs text-center py-3">Rest day</div>}
                     {blocks.map((b: any) =>
@@ -336,20 +359,19 @@ function ExerciseCard({ ex, isCoach, bestE1rm, selected, onToggleSelect, onUpdat
         <option value="sprint">Sprint</option>
         <option value="timed">Timed</option>
       </select>
-      {ex.type === "weighted" && (
-        <select className={inputClass} value={ex.mode} onChange={(e) => onUpdate({ mode: e.target.value })}>
-          <option value="percent">% of 1RM</option>
-          <option value="weight">Fixed weight</option>
-        </select>
-      )}
       {ex.type === "banded" && <input className={inputClass} placeholder="Band" value={ex.band || ""} onChange={(e) => onUpdate({ band: e.target.value })} />}
       {ex.type === "sprint" && <input className={inputClass} placeholder="Distance (yd)" value={ex.distance || ""} onChange={(e) => onUpdate({ distance: e.target.value })} />}
       <div className="flex gap-1">
         <input className={inputClass} type="number" placeholder="Sets" value={ex.sets || ""} onChange={(e) => onUpdate({ sets: e.target.value })} />
         {!isTimeBased && <input className={inputClass} type="number" placeholder="Reps" value={ex.reps || ""} onChange={(e) => onUpdate({ reps: e.target.value })} />}
-        {ex.type === "weighted" && ex.mode === "percent" && <input className={inputClass} type="number" placeholder="%1RM" value={ex.percentOfMax || ""} onChange={(e) => onUpdate({ percentOfMax: e.target.value })} />}
-        {ex.type === "weighted" && ex.mode === "weight" && <input className={inputClass} type="number" placeholder="Wt" value={ex.weight || ""} onChange={(e) => onUpdate({ weight: e.target.value })} />}
       </div>
+      {ex.type === "weighted" && (
+        <div className="flex gap-1 items-center">
+          <input className={inputClass} type="number" placeholder="%1RM" value={ex.percentOfMax || ""} onChange={(e) => onUpdate({ percentOfMax: e.target.value })} />
+          <span className="text-[10px] text-faint flex-shrink-0">or</span>
+          <input className={inputClass} type="number" placeholder="Exact weight" value={ex.weight || ""} onChange={(e) => onUpdate({ weight: e.target.value })} />
+        </div>
+      )}
       {ex.type === "weighted" && <div className="text-[11px] bg-chalksoft text-chalk rounded px-2 py-1 text-center" style={{ background: "rgba(227,178,60,0.16)", color: "#E3B23C" }}>{targetLabel(ex, bestE1rm)}</div>}
       <div className="flex gap-2 items-center flex-wrap text-[10px] text-faint">
         <label className="flex items-center gap-1"><input type="checkbox" checked={ex.isWarmup} onChange={(e) => onUpdate({ isWarmup: e.target.checked })} /> Warm-up</label>
