@@ -118,8 +118,6 @@ model ProgramExercise {
   order        Int      @default(0)
   notes        String?
 }
-  notes        String?
-}
 
 model WorkoutLog {
   id           String   @id @default(uuid())
