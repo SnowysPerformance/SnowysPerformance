@@ -126,7 +126,7 @@ model WorkoutLog {
   id           String   @id @default(uuid())
   teamId       String
   athleteId    String
-  athlete      User     @relation(fields: [athleteId], references: [id])
+  athlete      User     @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   date         DateTime
   label        String?
   exerciseName String
@@ -149,7 +149,7 @@ model TestResult {
   id        String   @id @default(uuid())
   teamId    String
   athleteId String
-  athlete   User     @relation(fields: [athleteId], references: [id])
+  athlete   User     @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   testType  String
   value     Float
   unit      String
@@ -161,7 +161,7 @@ model WearableData {
   id         String         @id @default(uuid())
   teamId     String
   athleteId  String
-  athlete    User           @relation(fields: [athleteId], references: [id])
+  athlete    User           @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   source     WearableSource
   date       DateTime
   recovery   Float?
@@ -178,7 +178,7 @@ model WearableData {
 model WearableAccountLink {
   id             String         @id @default(uuid())
   athleteId      String
-  athlete        User           @relation(fields: [athleteId], references: [id])
+  athlete        User           @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   source         WearableSource
   externalUserId String
   accessToken    String?

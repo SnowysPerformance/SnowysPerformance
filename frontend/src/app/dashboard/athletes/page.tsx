@@ -18,6 +18,15 @@ export default function AthletesPage() {
   const [planName, setPlanName] = useState("");
   const [creatingPlan, setCreatingPlan] = useState(false);
 
+  // Inline edit panel — change an athlete's name, login email, or reset
+  // their password, or remove them entirely.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editError, setEditError] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
   const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none";
 
   useEffect(() => {
@@ -60,6 +69,41 @@ export default function AthletesPage() {
     }
   }
 
+  function openEdit(a: any) {
+    if (editingId === a.id) {
+      setEditingId(null);
+      return;
+    }
+    setEditName(a.name);
+    setEditEmail(a.email);
+    setEditPassword("");
+    setEditError("");
+    setEditingId(a.id);
+  }
+
+  async function saveEdit(id: string) {
+    setEditError("");
+    setEditSaving(true);
+    try {
+      const body: any = { name: editName.trim(), email: editEmail.trim() };
+      if (editPassword) body.password = editPassword;
+      await api(`/api/teams/me/athletes/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+      setEditingId(null);
+      load();
+    } catch (err: any) {
+      setEditError(err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function deleteAthlete(a: any) {
+    if (!confirm(`Remove ${a.name} from your team? This permanently deletes their login and every workout, test, and plan assignment they have. This can't be undone.`)) return;
+    await api(`/api/teams/me/athletes/${a.id}`, { method: "DELETE" });
+    if (editingId === a.id) setEditingId(null);
+    load();
+  }
+
   if (user?.role !== "COACH") return <p className="text-muted">Only coaches can view the athlete roster.</p>;
 
   return (
@@ -84,12 +128,45 @@ export default function AthletesPage() {
         </div>
         <ul className="space-y-2">
           {athletes.map((a) => (
-            <li key={a.id} className="bg-surface border border-edge rounded p-3 text-sm flex items-center gap-3">
-              <input type="checkbox" checked={!!selected[a.id]} onChange={() => toggle(a.id)} className="flex-shrink-0" />
-              <Link href={`/dashboard/athletes/${a.id}`} className="flex-1 hover:text-accent transition-colors">
-                <span className="font-medium">{a.name}</span> — <span className="text-faint">{a.email}</span>
-              </Link>
-              <Link href={`/dashboard/athletes/${a.id}`} className="text-accent text-xs flex-shrink-0">View profile →</Link>
+            <li key={a.id} className="bg-surface border border-edge rounded p-3 text-sm">
+              <div className="flex items-center gap-3">
+                <input type="checkbox" checked={!!selected[a.id]} onChange={() => toggle(a.id)} className="flex-shrink-0" />
+                <Link href={`/dashboard/athletes/${a.id}`} className="flex-1 hover:text-accent transition-colors">
+                  <span className="font-medium">{a.name}</span> — <span className="text-faint">{a.email}</span>
+                </Link>
+                <Link href={`/dashboard/athletes/${a.id}`} className="text-accent text-xs flex-shrink-0">View profile →</Link>
+                <button onClick={() => openEdit(a)} className="text-xs text-muted hover:text-primary flex-shrink-0">
+                  {editingId === a.id ? "Close" : "Edit"}
+                </button>
+                <button onClick={() => deleteAthlete(a)} className="text-xs text-faint hover:text-red-400 flex-shrink-0" title="Remove this athlete">
+                  Delete
+                </button>
+              </div>
+
+              {editingId === a.id && (
+                <div className="mt-3 border-t border-edgesoft pt-3 grid grid-cols-2 gap-2 max-w-lg">
+                  {editError && <div className="col-span-2 text-red-400 text-xs">{editError}</div>}
+                  <div>
+                    <div className="text-xs text-faint mb-1">Name</div>
+                    <input className={inputClass} value={editName} onChange={(e) => setEditName(e.target.value)} />
+                  </div>
+                  <div>
+                    <div className="text-xs text-faint mb-1">Email (login username)</div>
+                    <input className={inputClass} value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-xs text-faint mb-1">Reset password (leave blank to keep their current one)</div>
+                    <input className={inputClass + " w-full"} type="password" placeholder="New password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} />
+                  </div>
+                  <button
+                    onClick={() => saveEdit(a.id)}
+                    disabled={editSaving || !editName.trim() || !editEmail.trim()}
+                    className="col-span-2 bg-accent text-accenttext text-sm font-semibold rounded px-4 py-2 disabled:opacity-40"
+                  >
+                    {editSaving ? "Saving…" : "Save Changes"}
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>

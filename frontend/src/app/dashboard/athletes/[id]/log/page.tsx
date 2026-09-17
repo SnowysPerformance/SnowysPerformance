@@ -130,6 +130,12 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
   const isTimeBased = type === "timed" || type === "sprint";
   const { prMap } = useMemo(() => computePRs(logs), [logs]);
 
+  async function deleteLog(id: string) {
+    if (!confirm("Delete this logged workout? This can't be undone.")) return;
+    await api(`/api/workouts/${id}`, { method: "DELETE" });
+    loadLogs();
+  }
+
   return (
     <div className="space-y-8">
       <form onSubmit={submit} className="bg-surface border border-edge rounded-lg p-4 max-w-2xl space-y-3">
@@ -270,7 +276,12 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
                     <span className="ml-2 text-xs bg-chalk text-accenttext font-bold rounded px-1.5 py-0.5 tracking-wide">PR</span>
                   )}
                 </span>
-                <span className="font-mono text-chalk text-xs">{summary}</span>
+                <span className="flex items-center gap-3 flex-shrink-0">
+                  <span className="font-mono text-chalk text-xs">{summary}</span>
+                  <button type="button" onClick={() => deleteLog(l.id)} className="text-faint hover:text-red-400 text-xs" title="Delete this logged workout">
+                    ✕
+                  </button>
+                </span>
               </li>
             );
           })}

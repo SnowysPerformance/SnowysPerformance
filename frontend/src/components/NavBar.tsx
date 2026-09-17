@@ -7,6 +7,7 @@ const coachLinks = [
   { href: "/dashboard/athletes", label: "Athletes" },
   { href: "/dashboard/programs", label: "Programs" },
   { href: "/dashboard/library", label: "Library" },
+  { href: "/dashboard/settings", label: "Settings" },
 ];
 
 const athleteLinks = [
@@ -15,6 +16,7 @@ const athleteLinks = [
   { href: "/dashboard/workouts", label: "Log" },
   { href: "/dashboard/fatigue", label: "Progress" },
   { href: "/dashboard/tests", label: "Testing" },
+  { href: "/dashboard/settings", label: "Settings" },
 ];
 
 export default function NavBar() {
