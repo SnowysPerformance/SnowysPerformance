@@ -1,19 +1,23 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
+import { downloadJSON, readFileAsJSON, safeFileName } from "@/lib/dataTransfer";
 
 const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none";
 
 export default function ProgramsPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [programs, setPrograms] = useState<any[]>([]);
   const [athletes, setAthletes] = useState<any[]>([]);
   const [name, setName] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [draftSelection, setDraftSelection] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [importError, setImportError] = useState("");
 
   const isCoach = user?.role === "COACH";
 
@@ -38,6 +42,29 @@ export default function ProgramsPage() {
     if (!confirm(`Delete "${program.name}"? This removes the whole plan — every phase, week, and exercise in it — for everyone it's assigned to. This can't be undone.`)) return;
     await api(`/api/programs/${program.id}`, { method: "DELETE" });
     load();
+  }
+
+  async function exportProgram(program: any) {
+    const data = await api(`/api/data/export/program/${program.id}`);
+    downloadJSON(`${safeFileName(program.name)}-program.json`, data);
+  }
+
+  async function importProgramFile(file: File) {
+    setImportError("");
+    try {
+      const data = await readFileAsJSON(file);
+      const result = await api("/api/data/import", { method: "POST", body: JSON.stringify(data) });
+      if (result.imported === "program" && result.programId) {
+        router.push(`/dashboard/programs/${result.programId}`);
+      } else {
+        // A whole-team export file was dropped in here — it still imports
+        // fine (programs + libraries), just report what came in.
+        load();
+        alert(`Imported ${result.programsImported ?? 0} program(s), ${result.libraryImported ?? 0} exercise(s), and ${result.testTypesImported ?? 0} test type(s).`);
+      }
+    } catch (err: any) {
+      setImportError(err.message);
+    }
   }
 
   function openAssign(program: any) {
@@ -74,10 +101,28 @@ export default function ProgramsPage() {
   return (
     <div className="space-y-8">
       {isCoach && (
-        <form onSubmit={createProgram} className="bg-surface border border-edge rounded p-4 flex gap-3 max-w-lg">
-          <input className={inputClass + " flex-1"} placeholder="New program name" value={name} onChange={(e) => setName(e.target.value)} />
-          <button className="bg-accent text-accenttext font-semibold rounded px-3 py-2 hover:bg-accentstrong transition-colors">Create</button>
-        </form>
+        <div className="space-y-2">
+          <form onSubmit={createProgram} className="bg-surface border border-edge rounded p-4 flex gap-3 max-w-lg">
+            <input className={inputClass + " flex-1"} placeholder="New program name" value={name} onChange={(e) => setName(e.target.value)} />
+            <button className="bg-accent text-accenttext font-semibold rounded px-3 py-2 hover:bg-accentstrong transition-colors">Create</button>
+          </form>
+          <div className="flex items-center gap-2">
+            <label className="text-xs border border-edge rounded px-3 py-1.5 text-muted hover:text-primary cursor-pointer">
+              Import a program (.json)
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) importProgramFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {importError && <span className="text-xs text-red-400">{importError}</span>}
+          </div>
+        </div>
       )}
 
       <div>
@@ -93,6 +138,9 @@ export default function ProgramsPage() {
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <button onClick={() => openAssign(p)} className="text-xs text-muted hover:text-primary">
                       {expandedId === p.id ? "Close" : "Assign to athletes ▾"}
+                    </button>
+                    <button onClick={() => exportProgram(p)} className="text-xs text-muted hover:text-primary" title="Download this plan as a JSON file">
+                      Export
                     </button>
                     <button onClick={() => deleteProgram(p)} className="text-xs text-faint hover:text-red-400" title="Delete this plan">
                       Delete

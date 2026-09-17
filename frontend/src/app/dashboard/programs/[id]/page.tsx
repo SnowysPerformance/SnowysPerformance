@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { TEST_PRESETS } from "@/lib/testPresets";
+import { downloadJSON, copyText, safeFileName } from "@/lib/dataTransfer";
 
 const e1rm = (weight: number, reps: number) => (reps <= 1 ? weight : weight * (1 + reps / 30));
 const round5 = (n: number) => Math.round(n / 5) * 5;
@@ -36,6 +37,63 @@ function targetLabel(ex: any, bestE1rm: Record<string, number>): string {
   return "—";
 }
 
+// Groups a day's exercises into supersets ("blocks") vs. standalone
+// exercises — shared by the on-screen day cards and the plain-text export
+// below, so both always agree on how a day is laid out.
+function buildBlocks(day: any) {
+  const seen = new Set<string>();
+  const blocks: any[] = [];
+  let letterIdx = 0;
+  day.exercises.forEach((ex: any) => {
+    if (ex.groupId) {
+      if (seen.has(ex.groupId)) return;
+      seen.add(ex.groupId);
+      const members = day.exercises.filter((x: any) => x.groupId === ex.groupId);
+      blocks.push({ type: "group", groupId: ex.groupId, label: ex.groupLabel, letter: String.fromCharCode(65 + letterIdx++), members });
+    } else blocks.push({ type: "single", ex });
+  });
+  return blocks;
+}
+
+function exerciseLine(ex: any, bestE1rm: Record<string, number>): string {
+  if (ex.isTest) {
+    const n = ex.sets || 1;
+    return `${ex.exerciseName} [TEST] — ${n} attempt${n > 1 ? "s" : ""}${ex.testUnit ? ` (${ex.testUnit})` : ""}`;
+  }
+  const isTimeBased = ex.type === "timed" || ex.type === "sprint";
+  const repsOrTime = isTimeBased ? "timed" : `${ex.reps || "?"} reps`;
+  return `${ex.exerciseName}${ex.methodName ? ` (${ex.methodName})` : ""}${ex.isWarmup ? " [warm-up]" : ""} — ${ex.sets || "?"}x${repsOrTime} @ ${targetLabel(ex, bestE1rm)}${ex.restSeconds ? ` · rest ${ex.restSeconds}s` : ""}`;
+}
+
+// A quick, shareable plain-text summary of one week of a plan — for texting
+// or emailing an athlete who isn't looking at the site.
+function buildWeekPlainText(programName: string, phase: any, week: any, bestE1rm: Record<string, number>): string {
+  const lines: string[] = [];
+  lines.push(`${programName}`);
+  lines.push(`${phase.name} · ${week.name}`);
+  lines.push("");
+  week.days.forEach((day: any) => {
+    lines.push(`${day.label}:`);
+    if (!day.exercises || day.exercises.length === 0) {
+      lines.push("  Rest day");
+      lines.push("");
+      return;
+    }
+    buildBlocks(day).forEach((b: any) => {
+      if (b.type === "single") {
+        lines.push(`  ${exerciseLine(b.ex, bestE1rm)}`);
+      } else {
+        lines.push(`  [${b.label}]`);
+        b.members.forEach((m: any, i: number) => {
+          lines.push(`    ${b.letter}${i + 1}. ${exerciseLine(m, bestE1rm)}`);
+        });
+      }
+    });
+    lines.push("");
+  });
+  return lines.join("\n");
+}
+
 const inputClass = "bg-inputbg border border-edge rounded px-2 py-1.5 text-xs placeholder-faint focus:border-accent outline-none w-full";
 
 export default function ProgramDetailPage({ params }: { params: { id: string } }) {
@@ -63,6 +121,8 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   const [phaseFormOpen, setPhaseFormOpen] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [groupLabel, setGroupLabel] = useState("");
+  const [copyConfirm, setCopyConfirm] = useState(false);
+  const [weekTextFallback, setWeekTextFallback] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -162,24 +222,33 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
     router.push(`/dashboard/workouts?${qs.toString()}`);
   }
 
-  function buildBlocks(day: any) {
-    const seen = new Set<string>();
-    const blocks: any[] = [];
-    let letterIdx = 0;
-    day.exercises.forEach((ex: any) => {
-      if (ex.groupId) {
-        if (seen.has(ex.groupId)) return;
-        seen.add(ex.groupId);
-        const members = day.exercises.filter((x: any) => x.groupId === ex.groupId);
-        blocks.push({ type: "group", groupId: ex.groupId, label: ex.groupLabel, letter: String.fromCharCode(65 + letterIdx++), members });
-      } else blocks.push({ type: "single", ex });
-    });
-    return blocks;
+  async function exportProgram() {
+    const data = await api(`/api/data/export/program/${params.id}`);
+    downloadJSON(`${safeFileName(program.name)}-program.json`, data);
+  }
+
+  async function copyWeekAsText() {
+    if (!phase || !week) return;
+    const text = buildWeekPlainText(program.name, phase, week, bestE1rm);
+    const ok = await copyText(text);
+    if (ok) {
+      setCopyConfirm(true);
+      setTimeout(() => setCopyConfirm(false), 2000);
+    } else {
+      setWeekTextFallback(text);
+    }
   }
 
   return (
     <div>
-      <h1 className="font-display text-xl font-semibold mb-1">{program.name}</h1>
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <h1 className="font-display text-xl font-semibold">{program.name}</h1>
+        {isCoach && (
+          <button onClick={exportProgram} className="text-xs border border-edge rounded px-3 py-1.5 text-muted hover:text-primary flex-shrink-0">
+            Export this plan
+          </button>
+        )}
+      </div>
       <datalist id="ex-lib">
         {library.map((it: any) => (
           <option key={it.id} value={it.name} />
@@ -261,21 +330,26 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
         <div className="bg-surface border border-edge rounded-lg p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="font-display text-xs uppercase tracking-wide text-muted">{phase.name} · {week.name} — Day by Day</div>
-            {isCoach && (
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-faint">Week starts:</span>
-                <input
-                  type="date"
-                  className={inputClass}
-                  style={{ width: 140 }}
-                  value={week.startDate ? week.startDate.slice(0, 10) : ""}
-                  onChange={async (e) => {
-                    await api(`/api/programs/weeks/${week.id}`, { method: "PATCH", body: JSON.stringify({ startDate: e.target.value || null }) });
-                    load();
-                  }}
-                />
-              </div>
-            )}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={copyWeekAsText} className="text-[11px] border border-edge rounded px-2.5 py-1 text-muted hover:text-primary">
+                {copyConfirm ? "Copied!" : "Copy week as text"}
+              </button>
+              {isCoach && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-faint">Week starts:</span>
+                  <input
+                    type="date"
+                    className={inputClass}
+                    style={{ width: 140 }}
+                    value={week.startDate ? week.startDate.slice(0, 10) : ""}
+                    onChange={async (e) => {
+                      await api(`/api/programs/weeks/${week.id}`, { method: "PATCH", body: JSON.stringify({ startDate: e.target.value || null }) });
+                      load();
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-2">
             {week.days.map((day: any) => {
@@ -352,6 +426,22 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {weekTextFallback !== null && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setWeekTextFallback(null)}>
+          <div className="bg-surface border border-edge rounded-lg p-4 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="font-display text-sm font-semibold mb-2">Copy this week</div>
+            <p className="text-xs text-faint mb-2">Your browser blocked the automatic copy — tap inside the box below to select the text, then copy it (Ctrl/Cmd+C).</p>
+            <textarea
+              readOnly
+              value={weekTextFallback}
+              onFocus={(e) => e.target.select()}
+              className="w-full h-64 bg-inputbg border border-edge rounded p-2 text-xs font-mono"
+            />
+            <button onClick={() => setWeekTextFallback(null)} className="mt-2 text-xs text-accent underline">Close</button>
           </div>
         </div>
       )}

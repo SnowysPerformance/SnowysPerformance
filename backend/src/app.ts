@@ -9,6 +9,7 @@ import fatigueRoutes from "./routes/fatigue.routes";
 import integrationRoutes from "./routes/integrations.routes";
 import libraryRoutes from "./routes/library.routes";
 import testTypeRoutes from "./routes/testTypes.routes";
+import dataTransferRoutes from "./routes/dataTransfer.routes";
 
 export const app = express();
 
@@ -26,6 +27,7 @@ app.use("/api/fatigue", fatigueRoutes);
 app.use("/api/integrations", integrationRoutes);
 app.use("/api/library", libraryRoutes);
 app.use("/api/test-types", testTypeRoutes);
+app.use("/api/data", dataTransferRoutes);
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

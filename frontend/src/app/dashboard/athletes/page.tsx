@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
+import { downloadJSON, safeFileName } from "@/lib/dataTransfer";
 
 export default function AthletesPage() {
   const { user } = useAuth();
@@ -104,6 +105,11 @@ export default function AthletesPage() {
     load();
   }
 
+  async function exportAthlete(a: any) {
+    const data = await api(`/api/data/export/athlete/${a.id}`);
+    downloadJSON(`${safeFileName(a.name)}-export.json`, data);
+  }
+
   if (user?.role !== "COACH") return <p className="text-muted">Only coaches can view the athlete roster.</p>;
 
   return (
@@ -137,6 +143,9 @@ export default function AthletesPage() {
                 <Link href={`/dashboard/athletes/${a.id}`} className="text-accent text-xs flex-shrink-0">View profile →</Link>
                 <button onClick={() => openEdit(a)} className="text-xs text-muted hover:text-primary flex-shrink-0">
                   {editingId === a.id ? "Close" : "Edit"}
+                </button>
+                <button onClick={() => exportAthlete(a)} className="text-xs text-muted hover:text-primary flex-shrink-0" title="Download this athlete's workouts and test results">
+                  Export
                 </button>
                 <button onClick={() => deleteAthlete(a)} className="text-xs text-faint hover:text-red-400 flex-shrink-0" title="Remove this athlete">
                   Delete
