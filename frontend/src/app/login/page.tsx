@@ -47,7 +47,7 @@ export default function LoginPage() {
         <p className="text-sm text-muted">
           No account?{" "}
           <Link className="underline text-accent" href="/register">
-            Register
+            You'll need an invite
           </Link>
         </p>
       </form>

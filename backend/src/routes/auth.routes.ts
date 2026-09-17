@@ -3,7 +3,6 @@ import * as ctrl from "../controllers/auth.controller";
 import { authenticate } from "../middleware/auth";
 
 const router = Router();
-router.post("/register-team", ctrl.registerTeamAndCoach);
 router.post("/login", ctrl.login);
 router.get("/me", authenticate, ctrl.me);
 router.patch("/me", authenticate, ctrl.updateMe);

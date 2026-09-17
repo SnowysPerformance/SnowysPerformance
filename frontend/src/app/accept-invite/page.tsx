@@ -44,7 +44,7 @@ function AcceptInviteForm() {
   const token = searchParams.get("token") || "";
 
   const [loading, setLoading] = useState(true);
-  const [invite, setInvite] = useState<{ email: string; teamName: string } | null>(null);
+  const [invite, setInvite] = useState<{ email: string; teamName: string; role: "COACH" | "ATHLETE" } | null>(null);
   const [loadError, setLoadError] = useState("");
 
   const [name, setName] = useState("");
@@ -104,8 +104,9 @@ function AcceptInviteForm() {
       {!loading && invite && (
         <form onSubmit={submit} className="space-y-4">
           <p className="text-sm text-muted">
-            You've been invited to join <span className="text-primary font-medium">{invite.teamName}</span> as <span className="text-primary font-medium">{invite.email}</span>.
-            Pick a name and password to finish setting up your account.
+            You've been invited to join <span className="text-primary font-medium">{invite.teamName}</span> as a{" "}
+            <span className="text-primary font-medium">{invite.role === "COACH" ? "coach" : "athlete"}</span>, using{" "}
+            <span className="text-primary font-medium">{invite.email}</span>. Pick a name and password to finish setting up your account.
           </p>
           {submitError && <div className="text-red-400 text-sm">{submitError}</div>}
           <input className={inputClass} placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />

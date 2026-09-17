@@ -52,7 +52,8 @@ export default function AthletesPage() {
   }
 
   async function loadInvites() {
-    setInvites(await api("/api/invites"));
+    const all = await api("/api/invites");
+    setInvites(all.filter((inv: any) => inv.role !== "COACH"));
   }
 
   function inviteLinkFor(token: string) {
@@ -64,7 +65,7 @@ export default function AthletesPage() {
     setInviteError("");
     setInviteSending(true);
     try {
-      const invite = await api("/api/invites", { method: "POST", body: JSON.stringify({ email: inviteEmail.trim() }) });
+      const invite = await api("/api/invites", { method: "POST", body: JSON.stringify({ email: inviteEmail.trim(), role: "ATHLETE" }) });
       setInviteEmail("");
       await loadInvites();
       // Copy the new link straight away so it's one less step for the coach.

@@ -245,6 +245,7 @@ model Invite {
   teamId      String
   team        Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
   email       String
+  role        Role      @default(ATHLETE)
   token       String    @unique
   invitedById String
   invitedBy   User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)

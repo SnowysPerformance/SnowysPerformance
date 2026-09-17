@@ -1,8 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, updateStoredUser } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
-import { downloadJSON, readFileAsJSON, safeFileName } from "@/lib/dataTransfer";
+import { downloadJSON, readFileAsJSON, safeFileName, copyText } from "@/lib/dataTransfer";
 
 const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none w-full";
 
@@ -12,6 +12,59 @@ export default function SettingsPage() {
 
   const [importMsg, setImportMsg] = useState("");
   const [importError, setImportError] = useState("");
+
+  // Invite another coach to help run this same team — like the athlete
+  // invite on the Athletes page, but for a co-coach. There's no other way
+  // to add a coach: open "create a team" sign-up has been removed.
+  const [coachInvites, setCoachInvites] = useState<any[]>([]);
+  const [coachInviteEmail, setCoachInviteEmail] = useState("");
+  const [coachInviteError, setCoachInviteError] = useState("");
+  const [coachInviteSending, setCoachInviteSending] = useState(false);
+  const [copiedCoachInviteId, setCopiedCoachInviteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isCoach) loadCoachInvites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCoach]);
+
+  async function loadCoachInvites() {
+    const all = await api("/api/invites");
+    setCoachInvites(all.filter((inv: any) => inv.role === "COACH"));
+  }
+
+  function inviteLinkFor(token: string) {
+    return `${window.location.origin}/accept-invite?token=${token}`;
+  }
+
+  async function sendCoachInvite(e: React.FormEvent) {
+    e.preventDefault();
+    setCoachInviteError("");
+    setCoachInviteSending(true);
+    try {
+      const invite = await api("/api/invites", { method: "POST", body: JSON.stringify({ email: coachInviteEmail.trim(), role: "COACH" }) });
+      setCoachInviteEmail("");
+      await loadCoachInvites();
+      await copyText(inviteLinkFor(invite.token));
+      setCopiedCoachInviteId(invite.id);
+      setTimeout(() => setCopiedCoachInviteId((id) => (id === invite.id ? null : id)), 2500);
+    } catch (err: any) {
+      setCoachInviteError(err.message);
+    } finally {
+      setCoachInviteSending(false);
+    }
+  }
+
+  async function copyCoachInviteLink(invite: any) {
+    await copyText(inviteLinkFor(invite.token));
+    setCopiedCoachInviteId(invite.id);
+    setTimeout(() => setCopiedCoachInviteId((id) => (id === invite.id ? null : id)), 2500);
+  }
+
+  async function revokeCoachInvite(invite: any) {
+    if (!confirm(`Cancel the invite to ${invite.email}? That link will stop working.`)) return;
+    await api(`/api/invites/${invite.id}`, { method: "DELETE" });
+    loadCoachInvites();
+  }
 
   async function exportMyData() {
     const data = await api(`/api/data/export/athlete/${user.id}`);
@@ -136,6 +189,52 @@ export default function SettingsPage() {
           {passwordSaving ? "Saving…" : "Change Password"}
         </button>
       </form>
+
+      {isCoach && (
+        <div className="bg-surface border border-edge rounded-lg p-4 space-y-3">
+          <div className="font-display text-sm uppercase tracking-wide text-muted">Invite a Co-Coach</div>
+          <p className="text-xs text-faint">
+            Send a one-time link so someone else can help run this team as a coach. There's no public sign-up — this is the only way another coach account gets created.
+          </p>
+          <form onSubmit={sendCoachInvite} className="flex gap-2">
+            <input className={inputClass + " flex-1"} type="email" placeholder="Co-coach's email" value={coachInviteEmail} onChange={(e) => setCoachInviteEmail(e.target.value)} />
+            <button
+              disabled={coachInviteSending || !coachInviteEmail.trim()}
+              className="bg-accent text-accenttext text-sm font-semibold rounded px-4 py-2 hover:bg-accentstrong transition-colors disabled:opacity-40 flex-shrink-0"
+            >
+              {coachInviteSending ? "Sending…" : "Send Invite"}
+            </button>
+          </form>
+          {coachInviteError && <p className="text-red-400 text-sm">{coachInviteError}</p>}
+          {coachInvites.length > 0 && (
+            <ul className="space-y-2">
+              {coachInvites.map((inv) => {
+                const expired = new Date(inv.expiresAt) < new Date();
+                const status = inv.usedAt ? "Joined" : expired ? "Expired" : "Pending";
+                return (
+                  <li key={inv.id} className="bg-raised border border-edgesoft rounded p-2.5 text-sm flex items-center justify-between gap-2">
+                    <span className="truncate">
+                      {inv.email}{" "}
+                      <span className={`text-xs ${inv.usedAt ? "text-good" : expired ? "text-faint" : "text-accent"}`}>· {status}</span>
+                    </span>
+                    {!inv.usedAt && !expired && (
+                      <span className="flex items-center gap-3 flex-shrink-0">
+                        <button onClick={() => copyCoachInviteLink(inv)} className="text-xs text-accent underline">
+                          {copiedCoachInviteId === inv.id ? "Copied!" : "Copy link"}
+                        </button>
+                        <button onClick={() => revokeCoachInvite(inv)} className="text-xs text-faint hover:text-red-400">Cancel</button>
+                      </span>
+                    )}
+                    {(inv.usedAt || expired) && (
+                      <button onClick={() => revokeCoachInvite(inv)} className="text-xs text-faint hover:text-red-400 flex-shrink-0">Remove</button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="bg-surface border border-edge rounded-lg p-4 space-y-3">
         <div className="font-display text-sm uppercase tracking-wide text-muted">Your Data</div>
