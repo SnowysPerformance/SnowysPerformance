@@ -232,20 +232,32 @@ export default function AthletesPage() {
           {athletes.map((a) => (
             <li key={a.id} className="bg-surface border border-edge rounded p-3 text-sm">
               <div className="flex items-center gap-3">
-                <input type="checkbox" checked={!!selected[a.id]} onChange={() => toggle(a.id)} className="flex-shrink-0" />
+                <input
+                  type="checkbox"
+                  checked={!!selected[a.id]}
+                  onChange={() => toggle(a.id)}
+                  disabled={a.canEdit === false}
+                  title={a.canEdit === false ? "You don't have edit permission for this athlete" : undefined}
+                  className="flex-shrink-0 disabled:opacity-30"
+                />
                 <Link href={`/dashboard/athletes/${a.id}`} className="flex-1 hover:text-accent transition-colors">
                   <span className="font-medium">{a.name}</span> — <span className="text-faint">{a.email}</span>
+                  {a.canEdit === false && <span className="text-xs text-faint"> · view only</span>}
                 </Link>
                 <Link href={`/dashboard/athletes/${a.id}`} className="text-accent text-xs flex-shrink-0">View profile →</Link>
-                <button onClick={() => openEdit(a)} className="text-xs text-muted hover:text-primary flex-shrink-0">
-                  {editingId === a.id ? "Close" : "Edit"}
-                </button>
+                {a.canEdit !== false && (
+                  <button onClick={() => openEdit(a)} className="text-xs text-muted hover:text-primary flex-shrink-0">
+                    {editingId === a.id ? "Close" : "Edit"}
+                  </button>
+                )}
                 <button onClick={() => exportAthlete(a)} className="text-xs text-muted hover:text-primary flex-shrink-0" title="Download this athlete's workouts and test results">
                   Export
                 </button>
-                <button onClick={() => deleteAthlete(a)} className="text-xs text-faint hover:text-red-400 flex-shrink-0" title="Remove this athlete">
-                  Delete
-                </button>
+                {a.canEdit !== false && (
+                  <button onClick={() => deleteAthlete(a)} className="text-xs text-faint hover:text-red-400 flex-shrink-0" title="Remove this athlete">
+                    Delete
+                  </button>
+                )}
               </div>
 
               {editingId === a.id && (

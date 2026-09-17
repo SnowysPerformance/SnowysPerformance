@@ -44,10 +44,19 @@ function AcceptInviteForm() {
   const token = searchParams.get("token") || "";
 
   const [loading, setLoading] = useState(true);
-  const [invite, setInvite] = useState<{ email: string; teamName: string; role: "COACH" | "ATHLETE" } | null>(null);
+  const [invite, setInvite] = useState<{
+    email: string;
+    teamName: string | null;
+    role: "COACH" | "ATHLETE";
+    newTeam: boolean;
+    accessLevel: "FULL" | "RESTRICTED";
+    athleteCount: number;
+    invitedByName: string;
+  } | null>(null);
   const [loadError, setLoadError] = useState("");
 
   const [name, setName] = useState("");
+  const [teamName, setTeamName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -74,7 +83,10 @@ function AcceptInviteForm() {
     }
     setSubmitting(true);
     try {
-      const data = await api("/api/invites/accept", { method: "POST", body: JSON.stringify({ token, name, password }) });
+      const data = await api("/api/invites/accept", {
+        method: "POST",
+        body: JSON.stringify({ token, name, password, teamName: invite?.newTeam ? teamName : undefined }),
+      });
       saveSession(data.token, data.user);
       router.push("/dashboard");
     } catch (err: any) {
@@ -103,12 +115,39 @@ function AcceptInviteForm() {
 
       {!loading && invite && (
         <form onSubmit={submit} className="space-y-4">
-          <p className="text-sm text-muted">
-            You've been invited to join <span className="text-primary font-medium">{invite.teamName}</span> as a{" "}
-            <span className="text-primary font-medium">{invite.role === "COACH" ? "coach" : "athlete"}</span>, using{" "}
-            <span className="text-primary font-medium">{invite.email}</span>. Pick a name and password to finish setting up your account.
-          </p>
+          {invite.newTeam ? (
+            <p className="text-sm text-muted">
+              <span className="text-primary font-medium">{invite.invitedByName}</span> has invited you to start your own,
+              completely separate coaching team on Snowy's Performance, using{" "}
+              <span className="text-primary font-medium">{invite.email}</span>. You'll start with a fresh slate — no
+              athletes yet — and you'll be the sole, full-access coach on it. Pick a name for your team, plus a name and
+              password for your own account.
+            </p>
+          ) : invite.role === "COACH" ? (
+            <p className="text-sm text-muted">
+              <span className="text-primary font-medium">{invite.invitedByName}</span> has invited you to join{" "}
+              <span className="text-primary font-medium">{invite.teamName}</span> as a co-coach, using{" "}
+              <span className="text-primary font-medium">{invite.email}</span>.{" "}
+              {invite.accessLevel === "RESTRICTED" ? (
+                <>You'll be able to see every athlete's plans and progress, but you'll only be able to edit the{" "}
+                  {invite.athleteCount} athlete{invite.athleteCount === 1 ? "" : "s"} you've been given permission
+                  for.</>
+              ) : (
+                <>You'll have full access to edit every athlete on the team.</>
+              )}{" "}
+              Pick a name and password to finish setting up your account.
+            </p>
+          ) : (
+            <p className="text-sm text-muted">
+              You've been invited to join <span className="text-primary font-medium">{invite.teamName}</span> as an
+              athlete, using <span className="text-primary font-medium">{invite.email}</span>. Pick a name and password
+              to finish setting up your account.
+            </p>
+          )}
           {submitError && <div className="text-red-400 text-sm">{submitError}</div>}
+          {invite.newTeam && (
+            <input className={inputClass} placeholder="Your team's name" value={teamName} onChange={(e) => setTeamName(e.target.value)} />
+          )}
           <input className={inputClass} placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
           <input className={inputClass} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <input className={inputClass} type="password" placeholder="Confirm password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />

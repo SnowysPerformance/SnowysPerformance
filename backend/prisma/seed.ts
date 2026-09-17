@@ -8,7 +8,7 @@ async function main() {
 
   const coachPasswordHash = await bcrypt.hash("password123", 10);
   const coach = await prisma.user.create({
-    data: { email: "coach@example.com", passwordHash: coachPasswordHash, name: "Coach Snow", role: "COACH", teamId: team.id },
+    data: { email: "coach@example.com", passwordHash: coachPasswordHash, name: "Coach Snow", role: "COACH", teamId: team.id, isHeadCoach: true },
   });
 
   const athletePasswordHash = await bcrypt.hash("password123", 10);

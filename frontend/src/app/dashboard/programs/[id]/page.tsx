@@ -28,13 +28,17 @@ function computedWeight(ex: any, bestE1rm: Record<string, number>): number | nul
   return round5((max * ex.percentOfMax) / 100);
 }
 function targetLabel(ex: any, bestE1rm: Record<string, number>): string {
+  let base = "—";
   if (!ex.type || ex.type === "weighted") {
     const w = computedWeight(ex, bestE1rm);
-    return w ? `${w} lb` : "need 1RM";
+    base = w ? `${w} lb` : "need 1RM";
+  } else if (ex.type === "banded") {
+    base = ex.band || "";
+  } else if (ex.type === "sprint") {
+    base = `${ex.distance || ""}yd${ex.resisted ? " (resisted)" : ""}`;
   }
-  if (ex.type === "banded") return ex.band || "";
-  if (ex.type === "sprint") return `${ex.distance || ""}yd${ex.resisted ? " (resisted)" : ""}`;
-  return "—";
+  if (ex.goalBarSpeed) base += `${base && base !== "—" ? " · " : ""}≥${ex.goalBarSpeed} m/s`;
+  return base || "—";
 }
 
 // Groups a day's exercises into supersets ("blocks") vs. standalone
@@ -467,19 +471,52 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, testTypeLibrary, onCusto
   }, [testTypeLibrary]);
 
   if (!isCoach) {
+    // Only show what the coach actually filled in — no "?" placeholders
+    // for blank fields. If the coach left the load/reps open-ended on
+    // purpose, that's flagged plainly as something to fill in while
+    // logging, instead of a cryptic dash or "need 1RM".
+    if (ex.isTest) {
+      const n = ex.sets || 1;
+      return (
+        <div className="bg-surface border border-edgesoft rounded p-2">
+          <div className="text-xs font-semibold flex items-center gap-1 flex-wrap">
+            {ex.exerciseName}
+            <span className="text-[10px] bg-raised text-accent rounded px-1">Test</span>
+          </div>
+          <div className="text-[11px] text-muted mt-1">{n} attempt{n > 1 ? "s" : ""}{ex.testUnit ? ` (${ex.testUnit})` : ""}</div>
+          <button onClick={onLogThis} className="text-[10px] text-accent underline mt-1">Log this</button>
+        </div>
+      );
+    }
+
+    const bits: string[] = [];
+    if (ex.sets) bits.push(`${ex.sets} set${ex.sets > 1 ? "s" : ""}`);
+    if (isTimeBased) {
+      if (ex.duration) bits.push(`${ex.duration}s`);
+    } else if (ex.reps) {
+      bits.push(`${ex.reps} reps`);
+    }
+    const weightTarget = ex.type === "weighted" ? computedWeight(ex, bestE1rm) : null;
+    if (ex.type === "weighted" && weightTarget) bits.push(`${weightTarget} lb`);
+    if (ex.type === "banded" && ex.band) bits.push(ex.band);
+    if (ex.type === "sprint" && ex.distance) bits.push(`${ex.distance}yd${ex.resisted ? " (resisted)" : ""}`);
+    if (ex.goalBarSpeed) bits.push(`≥${ex.goalBarSpeed} m/s`);
+    if (ex.restSeconds) bits.push(`rest ${ex.restSeconds}s`);
+
+    // Nothing prescribed for load/reps at all — the coach is leaving it
+    // to the athlete to decide when they log it, rather than it being an
+    // oversight, so say so plainly instead of showing nothing or "?".
+    const nothingToShowYet = !ex.sets && !ex.reps && !ex.duration && !weightTarget && !ex.goalBarSpeed;
+
     return (
       <div className="bg-surface border border-edgesoft rounded p-2">
         <div className="text-xs font-semibold flex items-center gap-1 flex-wrap">
           {ex.exerciseName}
           {ex.methodName && <span className="text-[10px] bg-raised text-faint rounded px-1">{ex.methodName}</span>}
           {ex.isWarmup && <span className="text-[10px] bg-raised text-faint rounded px-1">Warm-up</span>}
-          {ex.isTest && <span className="text-[10px] bg-raised text-accent rounded px-1">Test</span>}
         </div>
-        <div className="text-[11px] text-muted mt-1">
-          {ex.isTest
-            ? `${ex.sets || 1} attempt${(ex.sets || 1) > 1 ? "s" : ""}${ex.testUnit ? ` (${ex.testUnit})` : ""}`
-            : `${ex.sets || "?"}x${isTimeBased ? `${ex.duration || "?"}s` : ex.reps || "?"} — ${targetLabel(ex, bestE1rm)}`}
-        </div>
+        {bits.length > 0 && <div className="text-[11px] text-muted mt-1">{bits.join(" · ")}</div>}
+        {nothingToShowYet && <div className="text-[11px] text-faint mt-1 italic">You'll fill this in when you log it</div>}
         <button onClick={onLogThis} className="text-[10px] text-accent underline mt-1">Log this</button>
       </div>
     );
@@ -612,6 +649,14 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, testTypeLibrary, onCusto
           <input className={inputClass} type="number" placeholder="Exact weight" value={ex.weight || ""} onChange={(e) => onUpdate({ weight: e.target.value })} />
         </div>
       )}
+      <input
+        className={inputClass}
+        type="number"
+        step="any"
+        placeholder="Goal bar speed (m/s)"
+        value={ex.goalBarSpeed || ""}
+        onChange={(e) => onUpdate({ goalBarSpeed: e.target.value })}
+      />
       {ex.type === "weighted" && <div className="text-[11px] bg-chalksoft text-chalk rounded px-2 py-1 text-center" style={{ background: "rgba(227,178,60,0.16)", color: "#E3B23C" }}>{targetLabel(ex, bestE1rm)}</div>}
       <div className="flex gap-2 items-center flex-wrap text-[10px] text-faint">
         <label className="flex items-center gap-1"><input type="checkbox" checked={ex.isWarmup} onChange={(e) => onUpdate({ isWarmup: e.target.checked })} /> Warm-up</label>

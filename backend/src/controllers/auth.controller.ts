@@ -21,13 +21,22 @@ export async function login(req: Request, res: Response) {
   if (!ok) return res.status(401).json({ error: "Invalid email or password" });
 
   const token = signToken({ userId: user.id, role: user.role as "COACH" | "ATHLETE", teamId: user.teamId });
-  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId } });
+  res.json({
+    token,
+    user: {
+      id: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId,
+      isHeadCoach: user.isHeadCoach, isPlatformAdmin: user.isPlatformAdmin,
+    },
+  });
 }
 
 export async function me(req: Request, res: Response) {
   const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
   if (!user) return res.status(404).json({ error: "Not found" });
-  res.json({ id: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId });
+  res.json({
+    id: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId,
+    isHeadCoach: user.isHeadCoach, isPlatformAdmin: user.isPlatformAdmin,
+  });
 }
 
 // Self-service: the logged-in user changes their own name and/or email
@@ -46,7 +55,10 @@ export async function updateMe(req: Request, res: Response) {
   }
 
   const updated = await prisma.user.update({ where: { id: current.id }, data });
-  res.json({ id: updated.id, name: updated.name, email: updated.email, role: updated.role, teamId: updated.teamId });
+  res.json({
+    id: updated.id, name: updated.name, email: updated.email, role: updated.role, teamId: updated.teamId,
+    isHeadCoach: updated.isHeadCoach, isPlatformAdmin: updated.isPlatformAdmin,
+  });
 }
 
 // Self-service password change — requires the current password so someone

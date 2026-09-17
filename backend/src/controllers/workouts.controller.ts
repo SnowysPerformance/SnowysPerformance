@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../db";
+import { checkCanEditAthlete } from "../utils/permissions";
 
 function computeVolumeLoad(type: string, sets: any): number {
   if (type !== "weighted") return 0;
@@ -40,6 +41,10 @@ export async function createWorkoutLog(req: Request, res: Response) {
     return res.status(403).json({ error: "Athletes can only log their own workouts" });
   }
   const targetAthleteId = req.user!.role === "COACH" ? (athleteId || req.user!.userId) : req.user!.userId;
+  if (req.user!.role === "COACH") {
+    const permission = await checkCanEditAthlete(req, targetAthleteId);
+    if (!permission.ok) return res.status(permission.status).json({ error: permission.error });
+  }
   const t = type || "weighted";
 
   const log = await prisma.workoutLog.create({
@@ -92,6 +97,10 @@ export async function deleteWorkoutLog(req: Request, res: Response) {
   if (!log || log.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
   if (req.user!.role === "ATHLETE" && log.athleteId !== req.user!.userId) {
     return res.status(403).json({ error: "Forbidden" });
+  }
+  if (req.user!.role === "COACH") {
+    const permission = await checkCanEditAthlete(req, log.athleteId);
+    if (!permission.ok) return res.status(permission.status).json({ error: permission.error });
   }
   await prisma.workoutLog.delete({ where: { id: log.id } });
   res.status(204).send();

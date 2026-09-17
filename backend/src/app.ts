@@ -11,6 +11,9 @@ import libraryRoutes from "./routes/library.routes";
 import testTypeRoutes from "./routes/testTypes.routes";
 import dataTransferRoutes from "./routes/dataTransfer.routes";
 import inviteRoutes from "./routes/invites.routes";
+import coachRoutes from "./routes/coaches.routes";
+import adminRoutes from "./routes/admin.routes";
+import messageRoutes from "./routes/messages.routes";
 
 export const app = express();
 
@@ -30,6 +33,9 @@ app.use("/api/library", libraryRoutes);
 app.use("/api/test-types", testTypeRoutes);
 app.use("/api/data", dataTransferRoutes);
 app.use("/api/invites", inviteRoutes);
+app.use("/api/coaches", coachRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/messages", messageRoutes);
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

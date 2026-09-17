@@ -13,17 +13,33 @@ export default function SettingsPage() {
   const [importMsg, setImportMsg] = useState("");
   const [importError, setImportError] = useState("");
 
-  // Invite another coach to help run this same team — like the athlete
-  // invite on the Athletes page, but for a co-coach. There's no other way
-  // to add a coach: open "create a team" sign-up has been removed.
+  // Invite an assistant coach to help run this team — only the head coach
+  // can do this. A whole separate, brand-new team is now handed out only
+  // by the platform admin (see the Admin page), not from here.
   const [coachInvites, setCoachInvites] = useState<any[]>([]);
   const [coachInviteEmail, setCoachInviteEmail] = useState("");
+  const [inviteAccessLevel, setInviteAccessLevel] = useState<"FULL" | "RESTRICTED">("FULL");
+  const [inviteAthleteIds, setInviteAthleteIds] = useState<string[]>([]);
   const [coachInviteError, setCoachInviteError] = useState("");
   const [coachInviteSending, setCoachInviteSending] = useState(false);
   const [copiedCoachInviteId, setCopiedCoachInviteId] = useState<string | null>(null);
 
+  // The other coaches on this team, and whether they're full-access or
+  // restricted to specific athletes — plus whether I'm the head coach,
+  // which is what actually controls whether I can invite/manage them.
+  const [teamCoaches, setTeamCoaches] = useState<any[]>([]);
+  const [athletes, setAthletes] = useState<any[]>([]);
+  const amHeadCoach: boolean = !!teamCoaches.find((c) => c.isMe)?.isHeadCoach;
+  const [coachRowError, setCoachRowError] = useState<Record<string, string>>({});
+  const [coachRowSaving, setCoachRowSaving] = useState<Record<string, boolean>>({});
+  const [coachRowEdits, setCoachRowEdits] = useState<Record<string, { accessLevel: "FULL" | "RESTRICTED"; athleteIds: string[] }>>({});
+
   useEffect(() => {
-    if (isCoach) loadCoachInvites();
+    if (isCoach) {
+      loadCoachInvites();
+      loadTeamCoaches();
+      api("/api/teams/me/athletes").then(setAthletes).catch(() => {});
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCoach]);
 
@@ -32,8 +48,20 @@ export default function SettingsPage() {
     setCoachInvites(all.filter((inv: any) => inv.role === "COACH"));
   }
 
+  async function loadTeamCoaches() {
+    const list = await api("/api/coaches");
+    setTeamCoaches(list);
+    const edits: Record<string, { accessLevel: "FULL" | "RESTRICTED"; athleteIds: string[] }> = {};
+    for (const c of list) edits[c.id] = { accessLevel: c.accessLevel, athleteIds: c.athleteIds || [] };
+    setCoachRowEdits(edits);
+  }
+
   function inviteLinkFor(token: string) {
     return `${window.location.origin}/accept-invite?token=${token}`;
+  }
+
+  function toggleInviteAthlete(id: string) {
+    setInviteAthleteIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   }
 
   async function sendCoachInvite(e: React.FormEvent) {
@@ -41,8 +69,11 @@ export default function SettingsPage() {
     setCoachInviteError("");
     setCoachInviteSending(true);
     try {
-      const invite = await api("/api/invites", { method: "POST", body: JSON.stringify({ email: coachInviteEmail.trim(), role: "COACH" }) });
+      const body: any = { email: coachInviteEmail.trim(), role: "COACH", accessLevel: inviteAccessLevel };
+      if (inviteAccessLevel === "RESTRICTED") body.athleteIds = inviteAthleteIds;
+      const invite = await api("/api/invites", { method: "POST", body: JSON.stringify(body) });
       setCoachInviteEmail("");
+      setInviteAthleteIds([]);
       await loadCoachInvites();
       await copyText(inviteLinkFor(invite.token));
       setCopiedCoachInviteId(invite.id);
@@ -51,6 +82,27 @@ export default function SettingsPage() {
       setCoachInviteError(err.message);
     } finally {
       setCoachInviteSending(false);
+    }
+  }
+
+  async function saveCoachAccess(coachId: string) {
+    const edit = coachRowEdits[coachId];
+    if (!edit) return;
+    setCoachRowError((e) => ({ ...e, [coachId]: "" }));
+    setCoachRowSaving((s) => ({ ...s, [coachId]: true }));
+    try {
+      await api(`/api/coaches/${coachId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          accessLevel: edit.accessLevel,
+          athleteIds: edit.accessLevel === "RESTRICTED" ? edit.athleteIds : [],
+        }),
+      });
+      await loadTeamCoaches();
+    } catch (err: any) {
+      setCoachRowError((e) => ({ ...e, [coachId]: err.message }));
+    } finally {
+      setCoachRowSaving((s) => ({ ...s, [coachId]: false }));
     }
   }
 
@@ -192,19 +244,52 @@ export default function SettingsPage() {
 
       {isCoach && (
         <div className="bg-surface border border-edge rounded-lg p-4 space-y-3">
-          <div className="font-display text-sm uppercase tracking-wide text-muted">Invite a Co-Coach</div>
+          <div className="font-display text-sm uppercase tracking-wide text-muted">Invite an Assistant Coach</div>
           <p className="text-xs text-faint">
-            Send a one-time link so someone else can help run this team as a coach. There's no public sign-up — this is the only way another coach account gets created.
+            {amHeadCoach
+              ? "Send a one-time link so someone else can help coach this team. There's no public sign-up — this is the only way an assistant coach account gets created."
+              : "Only the head coach can invite an assistant coach to this team."}
           </p>
-          <form onSubmit={sendCoachInvite} className="flex gap-2">
-            <input className={inputClass + " flex-1"} type="email" placeholder="Co-coach's email" value={coachInviteEmail} onChange={(e) => setCoachInviteEmail(e.target.value)} />
-            <button
-              disabled={coachInviteSending || !coachInviteEmail.trim()}
-              className="bg-accent text-accenttext text-sm font-semibold rounded px-4 py-2 hover:bg-accentstrong transition-colors disabled:opacity-40 flex-shrink-0"
-            >
-              {coachInviteSending ? "Sending…" : "Send Invite"}
-            </button>
-          </form>
+
+          {amHeadCoach && (
+            <form onSubmit={sendCoachInvite} className="space-y-3">
+              <input className={inputClass} type="email" placeholder="Coach's email" value={coachInviteEmail} onChange={(e) => setCoachInviteEmail(e.target.value)} />
+
+              <div className="space-y-2">
+                <div className="flex gap-4 text-sm">
+                  <label className="flex items-center gap-1.5">
+                    <input type="radio" checked={inviteAccessLevel === "FULL"} onChange={() => setInviteAccessLevel("FULL")} />
+                    Full access (every athlete)
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <input type="radio" checked={inviteAccessLevel === "RESTRICTED"} onChange={() => setInviteAccessLevel("RESTRICTED")} />
+                    Restricted to specific athletes
+                  </label>
+                </div>
+                {inviteAccessLevel === "RESTRICTED" && (
+                  <div className="bg-raised border border-edgesoft rounded p-2 max-h-40 overflow-y-auto space-y-1">
+                    <p className="text-xs text-faint pb-1">
+                      They'll be able to see every athlete's plans/progress, but can only edit the ones checked here.
+                    </p>
+                    {athletes.length === 0 && <p className="text-xs text-faint">No athletes on the team yet.</p>}
+                    {athletes.map((a) => (
+                      <label key={a.id} className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={inviteAthleteIds.includes(a.id)} onChange={() => toggleInviteAthlete(a.id)} />
+                        {a.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button
+                disabled={coachInviteSending || !coachInviteEmail.trim()}
+                className="bg-accent text-accenttext text-sm font-semibold rounded px-4 py-2 hover:bg-accentstrong transition-colors disabled:opacity-40"
+              >
+                {coachInviteSending ? "Sending…" : "Send Invite"}
+              </button>
+            </form>
+          )}
           {coachInviteError && <p className="text-red-400 text-sm">{coachInviteError}</p>}
           {coachInvites.length > 0 && (
             <ul className="space-y-2">
@@ -215,7 +300,9 @@ export default function SettingsPage() {
                   <li key={inv.id} className="bg-raised border border-edgesoft rounded p-2.5 text-sm flex items-center justify-between gap-2">
                     <span className="truncate">
                       {inv.email}{" "}
-                      <span className={`text-xs ${inv.usedAt ? "text-good" : expired ? "text-faint" : "text-accent"}`}>· {status}</span>
+                      <span className={`text-xs ${inv.usedAt ? "text-good" : expired ? "text-faint" : "text-accent"}`}>
+                        · {status}{inv.accessLevel === "RESTRICTED" ? " · restricted" : ""}
+                      </span>
                     </span>
                     {!inv.usedAt && !expired && (
                       <span className="flex items-center gap-3 flex-shrink-0">
@@ -233,6 +320,92 @@ export default function SettingsPage() {
               })}
             </ul>
           )}
+        </div>
+      )}
+
+      {isCoach && teamCoaches.length > 1 && (
+        <div className="bg-surface border border-edge rounded-lg p-4 space-y-3">
+          <div className="font-display text-sm uppercase tracking-wide text-muted">Coaches on This Team</div>
+          {!amHeadCoach && (
+            <p className="text-xs text-faint">Only the head coach can change these permissions.</p>
+          )}
+          <ul className="space-y-3">
+            {teamCoaches.map((c) => {
+              const edit = coachRowEdits[c.id] || { accessLevel: c.accessLevel, athleteIds: c.athleteIds || [] };
+              const canManage = amHeadCoach && !c.isMe && !c.isHeadCoach;
+              return (
+                <li key={c.id} className="bg-raised border border-edgesoft rounded p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm truncate">
+                      {c.name} {c.isMe && <span className="text-xs text-faint">(you)</span>}
+                      {c.isHeadCoach && <span className="text-xs text-accent"> · Head Coach</span>}
+                      <span className="text-xs text-faint"> · {c.email}</span>
+                    </span>
+                  </div>
+                  {canManage ? (
+                    <>
+                      <div className="flex gap-4 text-sm">
+                        <label className="flex items-center gap-1.5">
+                          <input
+                            type="radio"
+                            checked={edit.accessLevel === "FULL"}
+                            onChange={() => setCoachRowEdits((e) => ({ ...e, [c.id]: { ...edit, accessLevel: "FULL" } }))}
+                          />
+                          Full access
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          <input
+                            type="radio"
+                            checked={edit.accessLevel === "RESTRICTED"}
+                            onChange={() => setCoachRowEdits((e) => ({ ...e, [c.id]: { ...edit, accessLevel: "RESTRICTED" } }))}
+                          />
+                          Restricted
+                        </label>
+                      </div>
+                      {edit.accessLevel === "RESTRICTED" && (
+                        <div className="bg-surface border border-edgesoft rounded p-2 max-h-32 overflow-y-auto space-y-1">
+                          {athletes.map((a) => (
+                            <label key={a.id} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={edit.athleteIds.includes(a.id)}
+                                onChange={() =>
+                                  setCoachRowEdits((e) => ({
+                                    ...e,
+                                    [c.id]: {
+                                      ...edit,
+                                      athleteIds: edit.athleteIds.includes(a.id)
+                                        ? edit.athleteIds.filter((x) => x !== a.id)
+                                        : [...edit.athleteIds, a.id],
+                                    },
+                                  }))
+                                }
+                              />
+                              {a.name}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      {coachRowError[c.id] && <p className="text-red-400 text-xs">{coachRowError[c.id]}</p>}
+                      <button
+                        onClick={() => saveCoachAccess(c.id)}
+                        disabled={coachRowSaving[c.id]}
+                        className="bg-accent text-accenttext text-xs font-semibold rounded px-3 py-1.5 hover:bg-accentstrong transition-colors disabled:opacity-40"
+                      >
+                        {coachRowSaving[c.id] ? "Saving…" : "Save"}
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-xs text-faint">
+                      {c.accessLevel === "RESTRICTED"
+                        ? `Restricted — can edit ${c.athleteIds.length} athlete${c.athleteIds.length === 1 ? "" : "s"} (can view all)`
+                        : "Full access"}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
