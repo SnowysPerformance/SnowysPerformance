@@ -73,7 +73,7 @@ async function main() {
   console.log("Seed complete.");
   console.log("Coach login:   coach@example.com / password123");
   console.log("Athlete login: athlete@example.com / password123");
-  console.log(`Team ID (for a second athlete to self-register): ${team.id}`);
+  console.log("To add another athlete, sign in as the coach and use \"Invite an Athlete\" on the Athletes page.");
 }
 
 main()

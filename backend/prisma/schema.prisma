@@ -27,6 +27,7 @@ model Team {
   programs Program[]
   exerciseLibrary ExerciseLibraryItem[]
   testTypeLibrary TestTypeLibraryItem[]
+  invites  Invite[]
 }
 
 model User {
@@ -45,6 +46,7 @@ model User {
   wearableAccountLinks WearableAccountLink[]
   createdPrograms     Program[]            @relation("ProgramCreator")
   programAssignments  ProgramAssignment[]
+  sentInvites         Invite[]
 }
 
 model Program {
@@ -233,4 +235,22 @@ model TestTypeLibraryItem {
   createdAt DateTime @default(now())
 
   @@unique([teamId, name])
+}
+
+// A one-time link a coach generates for a specific email address, so only
+// someone the coach actually invited can create an athlete login on their
+// team — there's no more open "paste in a Team ID" self-registration.
+model Invite {
+  id          String    @id @default(uuid())
+  teamId      String
+  team        Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  email       String
+  token       String    @unique
+  invitedById String
+  invitedBy   User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+  usedAt      DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@index([teamId])
 }

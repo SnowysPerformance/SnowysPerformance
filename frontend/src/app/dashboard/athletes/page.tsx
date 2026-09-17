@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
-import { downloadJSON, safeFileName } from "@/lib/dataTransfer";
+import { downloadJSON, safeFileName, copyText } from "@/lib/dataTransfer";
 
 export default function AthletesPage() {
   const { user } = useAuth();
@@ -14,6 +14,16 @@ export default function AthletesPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+
+  // Invite-only athlete signup: a coach sends a one-time link to a specific
+  // email instead of anyone being able to self-register. This is now the
+  // only way (besides "Add an Athlete" below, which the coach controls
+  // directly) that a new athlete login gets created.
+  const [invites, setInvites] = useState<any[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [planName, setPlanName] = useState("");
@@ -31,11 +41,53 @@ export default function AthletesPage() {
   const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none";
 
   useEffect(() => {
-    if (user?.role === "COACH") load();
+    if (user?.role === "COACH") {
+      load();
+      loadInvites();
+    }
   }, [user]);
 
   async function load() {
     setAthletes(await api("/api/teams/me/athletes"));
+  }
+
+  async function loadInvites() {
+    setInvites(await api("/api/invites"));
+  }
+
+  function inviteLinkFor(token: string) {
+    return `${window.location.origin}/accept-invite?token=${token}`;
+  }
+
+  async function sendInvite(e: React.FormEvent) {
+    e.preventDefault();
+    setInviteError("");
+    setInviteSending(true);
+    try {
+      const invite = await api("/api/invites", { method: "POST", body: JSON.stringify({ email: inviteEmail.trim() }) });
+      setInviteEmail("");
+      await loadInvites();
+      // Copy the new link straight away so it's one less step for the coach.
+      await copyText(inviteLinkFor(invite.token));
+      setCopiedInviteId(invite.id);
+      setTimeout(() => setCopiedInviteId((id) => (id === invite.id ? null : id)), 2500);
+    } catch (err: any) {
+      setInviteError(err.message);
+    } finally {
+      setInviteSending(false);
+    }
+  }
+
+  async function copyInviteLink(invite: any) {
+    await copyText(inviteLinkFor(invite.token));
+    setCopiedInviteId(invite.id);
+    setTimeout(() => setCopiedInviteId((id) => (id === invite.id ? null : id)), 2500);
+  }
+
+  async function revokeInvite(invite: any) {
+    if (!confirm(`Cancel the invite to ${invite.email}? That link will stop working.`)) return;
+    await api(`/api/invites/${invite.id}`, { method: "DELETE" });
+    loadInvites();
   }
 
   async function createAthlete(e: React.FormEvent) {
@@ -115,7 +167,50 @@ export default function AthletesPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-display text-xl font-semibold mb-4">Add an Athlete</h1>
+        <h1 className="font-display text-xl font-semibold mb-1">Invite an Athlete</h1>
+        <p className="text-xs text-faint mb-4">
+          Send a one-time link to their email — only someone with that exact link can join your team. Nobody can sign up on their own anymore.
+        </p>
+        <form onSubmit={sendInvite} className="bg-surface border border-edge rounded p-4 flex gap-3 max-w-lg">
+          <input className={inputClass + " flex-1"} type="email" placeholder="Athlete's email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+          <button disabled={inviteSending || !inviteEmail.trim()} className="bg-accent text-accenttext font-semibold rounded px-3 py-2 hover:bg-accentstrong transition-colors disabled:opacity-40 flex-shrink-0">
+            {inviteSending ? "Sending…" : "Send Invite"}
+          </button>
+        </form>
+        {inviteError && <p className="text-red-400 text-sm mt-2">{inviteError}</p>}
+
+        {invites.length > 0 && (
+          <ul className="mt-3 space-y-2 max-w-lg">
+            {invites.map((inv) => {
+              const expired = new Date(inv.expiresAt) < new Date();
+              const status = inv.usedAt ? "Joined" : expired ? "Expired" : "Pending";
+              return (
+                <li key={inv.id} className="bg-surface border border-edgesoft rounded p-2.5 text-sm flex items-center justify-between gap-2">
+                  <span className="truncate">
+                    {inv.email}{" "}
+                    <span className={`text-xs ${inv.usedAt ? "text-good" : expired ? "text-faint" : "text-accent"}`}>· {status}</span>
+                  </span>
+                  {!inv.usedAt && !expired && (
+                    <span className="flex items-center gap-3 flex-shrink-0">
+                      <button onClick={() => copyInviteLink(inv)} className="text-xs text-accent underline">
+                        {copiedInviteId === inv.id ? "Copied!" : "Copy link"}
+                      </button>
+                      <button onClick={() => revokeInvite(inv)} className="text-xs text-faint hover:text-red-400">Cancel</button>
+                    </span>
+                  )}
+                  {(inv.usedAt || expired) && (
+                    <button onClick={() => revokeInvite(inv)} className="text-xs text-faint hover:text-red-400 flex-shrink-0">Remove</button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <div>
+        <h1 className="font-display text-xl font-semibold mb-1">Add an Athlete Directly</h1>
+        <p className="text-xs text-faint mb-4">Or skip the invite and set up their login yourself — you pick their password, and can hand it to them however you like.</p>
         <form onSubmit={createAthlete} className="bg-surface border border-edge rounded p-4 grid grid-cols-2 gap-3 max-w-lg">
           {error && <div className="col-span-2 text-red-400 text-sm">{error}</div>}
           <input className={inputClass + " col-span-2"} placeholder="Athlete's name" value={name} onChange={(e) => setName(e.target.value)} />

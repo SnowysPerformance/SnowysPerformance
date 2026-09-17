@@ -136,8 +136,10 @@ npm run dev                   # http://localhost:3000
 - Coach: `coach@example.com` / `password123`
 - Athlete: `athlete@example.com` / `password123`
 
-The seed script also prints the generated **Team ID** — a second athlete can
-self-register with it from the Register page.
+Athlete accounts are invite-only — there's no open self-registration.
+Sign in as the coach and use "Invite an Athlete" on the Athletes page to
+send a one-time link (copied to your clipboard automatically), or "Add an
+Athlete Directly" to set a login and password for them yourself.
 
 ## What's intentionally minimal (and where to extend it)
 
