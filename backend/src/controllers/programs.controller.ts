@@ -223,6 +223,7 @@ export async function addExercise(req: Request, res: Response) {
       restSeconds: b.restSeconds || null,
       isWarmup: !!b.isWarmup,
       isTest: !!b.isTest,
+      testUnit: b.testUnit || null,
       notes: b.notes || null,
     },
   });
@@ -256,6 +257,7 @@ export async function updateExercise(req: Request, res: Response) {
       restSeconds: b.restSeconds !== undefined ? b.restSeconds : existing.restSeconds,
       isWarmup: b.isWarmup !== undefined ? !!b.isWarmup : existing.isWarmup,
       isTest: b.isTest !== undefined ? !!b.isTest : existing.isTest,
+      testUnit: b.testUnit !== undefined ? b.testUnit : existing.testUnit,
       groupId: b.groupId !== undefined ? b.groupId : existing.groupId,
       groupLabel: b.groupLabel !== undefined ? b.groupLabel : existing.groupLabel,
     },

@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
+import { TEST_PRESETS } from "@/lib/testPresets";
 
 const e1rm = (weight: number, reps: number) => (reps <= 1 ? weight : weight * (1 + reps / 30));
 const round5 = (n: number) => Math.round(n / 5) * 5;
@@ -48,9 +49,14 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   const [bestE1rm, setBestE1rm] = useState<Record<string, number>>({});
   const [previewAthleteId, setPreviewAthleteId] = useState("");
   const [library, setLibrary] = useState<any[]>([]);
+  const [testTypeLibrary, setTestTypeLibrary] = useState<any[]>([]);
 
+  function loadTestTypeLibrary() {
+    api("/api/test-types").then(setTestTypeLibrary).catch(console.error);
+  }
   useEffect(() => {
     api("/api/library").then(setLibrary).catch(console.error);
+    loadTestTypeLibrary();
   }, []);
 
   const [phaseForm, setPhaseForm] = useState({ name: "", weeks: "", goal: "" });
@@ -293,6 +299,8 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                           isCoach={isCoach}
                           bestE1rm={bestE1rm}
                           library={library}
+                          testTypeLibrary={testTypeLibrary}
+                          onCustomTestTypeSaved={loadTestTypeLibrary}
                           selected={!!selected[b.ex.id]}
                           onToggleSelect={() => setSelected((s) => ({ ...s, [b.ex.id]: !s[b.ex.id] }))}
                           onUpdate={(patch: any) => updateExercise(b.ex.id, patch)}
@@ -313,6 +321,8 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                                 isCoach={isCoach}
                                 bestE1rm={bestE1rm}
                                 library={library}
+                                testTypeLibrary={testTypeLibrary}
+                                onCustomTestTypeSaved={loadTestTypeLibrary}
                                 selected={!!selected[m.id]}
                                 onToggleSelect={() => setSelected((s) => ({ ...s, [m.id]: !s[m.id] }))}
                                 onUpdate={(patch: any) => updateExercise(m.id, patch)}
@@ -349,11 +359,23 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   );
 }
 
-function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect, onUpdate, onDelete, onLogThis }: any) {
+function ExerciseCard({ ex, isCoach, bestE1rm, library, testTypeLibrary, onCustomTestTypeSaved, selected, onToggleSelect, onUpdate, onDelete, onLogThis }: any) {
   const isTimeBased = ex.type === "timed" || ex.type === "sprint";
   const libItem = (library || []).find((it: any) => it.name === ex.exerciseName);
   const regressions: string[] = libItem?.regressions || [];
   const progressions: string[] = libItem?.progressions || [];
+
+  // Same preset + team-library + custom test-type list used when actually
+  // logging a test, so what a coach prescribes here always matches an
+  // option the athlete will see on the Log page.
+  const testOptions = useMemo(() => {
+    const presetLabels = new Set(TEST_PRESETS.map((p) => p.label));
+    const fromLibrary = (testTypeLibrary || [])
+      .filter((li: any) => !presetLabels.has(li.name))
+      .map((li: any) => ({ key: `lib:${li.id}`, label: li.name, unit: li.unit || "" }));
+    return [...TEST_PRESETS.map((p) => ({ key: `preset:${p.key}`, label: p.label, unit: p.unit })), ...fromLibrary];
+  }, [testTypeLibrary]);
+
   if (!isCoach) {
     return (
       <div className="bg-surface border border-edgesoft rounded p-2">
@@ -364,12 +386,92 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
           {ex.isTest && <span className="text-[10px] bg-raised text-accent rounded px-1">Test</span>}
         </div>
         <div className="text-[11px] text-muted mt-1">
-          {ex.sets || "?"}x{isTimeBased ? `${ex.duration || "?"}s` : ex.reps || "?"} — {targetLabel(ex, bestE1rm)}
+          {ex.isTest
+            ? `${ex.sets || 1} attempt${(ex.sets || 1) > 1 ? "s" : ""}${ex.testUnit ? ` (${ex.testUnit})` : ""}`
+            : `${ex.sets || "?"}x${isTimeBased ? `${ex.duration || "?"}s` : ex.reps || "?"} — ${targetLabel(ex, bestE1rm)}`}
         </div>
         <button onClick={onLogThis} className="text-[10px] text-accent underline mt-1">Log this</button>
       </div>
     );
   }
+
+  if (ex.isTest) {
+    // Prescribing a test: pick which test and how many attempts, instead of
+    // the usual exercise/weight/reps fields — this mirrors the Log a Test
+    // tab exactly, so "Log this" opens pre-filled with a matching test.
+    const matched = testOptions.find((o: any) => o.label.toLowerCase() === (ex.exerciseName || "").toLowerCase());
+    const selectedKey = matched ? matched.key : ex.exerciseName ? "custom" : "";
+    const isCustom = selectedKey === "custom";
+    const attempts = Math.max(1, Number(ex.sets) || 1);
+
+    function chooseTestType(key: string) {
+      if (key === "custom") {
+        onUpdate({ exerciseName: matched ? "" : ex.exerciseName, testUnit: matched ? "" : ex.testUnit });
+        return;
+      }
+      const opt = testOptions.find((o: any) => o.key === key);
+      if (opt) onUpdate({ exerciseName: opt.label, testUnit: opt.unit });
+    }
+    function saveCustomIfReady(name: string, unit: string) {
+      if (name.trim()) {
+        api("/api/test-types", { method: "POST", body: JSON.stringify({ name: name.trim(), unit: unit.trim() }) }).then(onCustomTestTypeSaved);
+      }
+    }
+
+    return (
+      <div className="bg-surface border border-edgesoft rounded p-2 space-y-1.5">
+        <div className="flex items-center gap-1">
+          <input type="checkbox" checked={selected} onChange={onToggleSelect} className="flex-shrink-0" />
+          <select className={inputClass} value={selectedKey} onChange={(e) => chooseTestType(e.target.value)}>
+            <option value="" disabled>Select a test…</option>
+            {testOptions.map((o: any) => (
+              <option key={o.key} value={o.key}>{o.label}</option>
+            ))}
+            <option value="custom">Custom…</option>
+          </select>
+        </div>
+        {isCustom && (
+          <div className="flex gap-1">
+            <input
+              className={inputClass}
+              placeholder="Test name"
+              value={ex.exerciseName || ""}
+              onChange={(e) => onUpdate({ exerciseName: e.target.value })}
+              onBlur={(e) => saveCustomIfReady(e.target.value, ex.testUnit || "")}
+            />
+            <input
+              className={inputClass}
+              placeholder="Unit (in / sec / lb …)"
+              value={ex.testUnit || ""}
+              onChange={(e) => onUpdate({ testUnit: e.target.value })}
+              onBlur={(e) => saveCustomIfReady(ex.exerciseName || "", e.target.value)}
+            />
+          </div>
+        )}
+        <div className="space-y-1">
+          <div className="text-[10px] text-faint">Attempts (how many sets/tries the athlete should log)</div>
+          {Array.from({ length: attempts }).map((_, i) => (
+            <div key={i} className="flex items-center gap-1">
+              <span className="text-[10px] text-faint w-4 flex-shrink-0">{i + 1}</span>
+              <div className="flex-1 h-6 bg-inputbg border border-edge rounded text-[10px] text-faint flex items-center px-2">
+                Attempt {i + 1}{ex.testUnit ? ` (${ex.testUnit})` : ""}
+              </div>
+              {attempts > 1 && (
+                <button type="button" onClick={() => onUpdate({ sets: attempts - 1 })} className="text-faint hover:text-red-400 text-[10px] flex-shrink-0">✕</button>
+              )}
+            </div>
+          ))}
+          <button type="button" onClick={() => onUpdate({ sets: attempts + 1 })} className="text-[10px] text-accent underline">+ Add attempt</button>
+        </div>
+        <input className={inputClass} type="number" placeholder="Rest between attempts (sec)" value={ex.restSeconds || ""} onChange={(e) => onUpdate({ restSeconds: e.target.value })} />
+        <div className="flex gap-2 items-center flex-wrap text-[10px] text-faint">
+          <label className="flex items-center gap-1 text-accent"><input type="checkbox" checked={ex.isTest} onChange={(e) => onUpdate({ isTest: e.target.checked })} /> Test</label>
+        </div>
+        <button onClick={onDelete} className="text-[10px] text-faint hover:text-red-400 w-full text-right">Delete</button>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-surface border border-edgesoft rounded p-2 space-y-1">
       <div className="flex items-center gap-1">
@@ -423,7 +525,9 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
       {ex.type === "weighted" && <div className="text-[11px] bg-chalksoft text-chalk rounded px-2 py-1 text-center" style={{ background: "rgba(227,178,60,0.16)", color: "#E3B23C" }}>{targetLabel(ex, bestE1rm)}</div>}
       <div className="flex gap-2 items-center flex-wrap text-[10px] text-faint">
         <label className="flex items-center gap-1"><input type="checkbox" checked={ex.isWarmup} onChange={(e) => onUpdate({ isWarmup: e.target.checked })} /> Warm-up</label>
-        <label className="flex items-center gap-1 text-accent"><input type="checkbox" checked={ex.isTest} onChange={(e) => onUpdate({ isTest: e.target.checked })} /> Test</label>
+        <label className="flex items-center gap-1 text-accent">
+          <input type="checkbox" checked={ex.isTest} onChange={(e) => onUpdate({ isTest: e.target.checked, sets: e.target.checked ? ex.sets || 1 : ex.sets })} /> Test
+        </label>
       </div>
       <input className={inputClass} type="number" placeholder="Rest (sec)" value={ex.restSeconds || ""} onChange={(e) => onUpdate({ restSeconds: e.target.value })} />
       <button onClick={onDelete} className="text-[10px] text-faint hover:text-red-400 w-full text-right">Delete</button>

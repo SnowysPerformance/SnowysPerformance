@@ -116,6 +116,7 @@ model ProgramExercise {
   restSeconds  String?
   isWarmup     Boolean  @default(false)
   isTest       Boolean  @default(false)
+  testUnit     String?
   groupId      String?
   groupLabel   String?
   order        Int      @default(0)
