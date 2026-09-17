@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
+import { TEST_PRESETS } from "@/lib/testPresets";
 
 type SetRow = { weight: string; reps: string; duration: string };
 
@@ -28,6 +29,17 @@ export default function WorkoutsPage() {
 
   const [logs, setLogs] = useState<any[]>([]);
 
+  // "Mark as Test" details — same preset/unit picker as the coach's per-athlete
+  // Log tab and the Testing tab: either derive the test value from the
+  // weight/reps/time logged above, or pick a test type and type its value
+  // directly in its own unit (e.g. inches jumped for a Vertical Jump).
+  const [testMode, setTestMode] = useState<"auto" | "direct">("auto");
+  const [testTypeLibrary, setTestTypeLibrary] = useState<any[]>([]);
+  const [testOptionKey, setTestOptionKey] = useState(`preset:${TEST_PRESETS[0].key}`);
+  const [testCustomName, setTestCustomName] = useState("");
+  const [testCustomUnit, setTestCustomUnit] = useState("");
+  const [testValue, setTestValue] = useState("");
+
   const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none w-full";
   const tinyCheck = "flex items-center gap-1.5 text-xs text-faint whitespace-nowrap";
 
@@ -39,6 +51,7 @@ export default function WorkoutsPage() {
   useEffect(() => {
     if (user?.role === "COACH") api("/api/teams/me/athletes").then(setAthletes).catch(console.error);
     loadLogs();
+    loadTestTypeLibrary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -46,6 +59,22 @@ export default function WorkoutsPage() {
     const data = await api("/api/workouts" + (athleteId ? `?athleteId=${athleteId}` : ""));
     setLogs(data);
   }
+  async function loadTestTypeLibrary() {
+    setTestTypeLibrary(await api("/api/test-types"));
+  }
+
+  const testOptions = useMemo(() => {
+    const presetLabels = new Set(TEST_PRESETS.map((p) => p.label));
+    const fromLibrary = testTypeLibrary
+      .filter((li) => !presetLabels.has(li.name))
+      .map((li) => ({ key: `lib:${li.id}`, label: li.name, unit: li.unit || "" }));
+    return [...TEST_PRESETS.map((p) => ({ key: `preset:${p.key}`, label: p.label, unit: p.unit })), ...fromLibrary];
+  }, [testTypeLibrary]);
+
+  const isCustomTest = testOptionKey === "custom";
+  const activeTestOption = testOptions.find((o) => o.key === testOptionKey);
+  const activeTestLabel = isCustomTest ? testCustomName.trim() : activeTestOption?.label || "";
+  const activeTestUnit = isCustomTest ? testCustomUnit.trim() : activeTestOption?.unit || "";
 
   function updateSet(i: number, field: keyof SetRow, value: string) {
     setSets((s) => s.map((row, idx) => (idx === i ? { ...row, [field]: value } : row)));
@@ -69,6 +98,11 @@ export default function WorkoutsPage() {
     setIsTest(false);
     setSets([{ weight: "", reps: "", duration: "" }]);
     setLabel("");
+    setTestMode("auto");
+    setTestOptionKey(`preset:${TEST_PRESETS[0].key}`);
+    setTestCustomName("");
+    setTestCustomUnit("");
+    setTestValue("");
   }
 
   async function submit(e: React.FormEvent) {
@@ -78,6 +112,13 @@ export default function WorkoutsPage() {
     else if (type === "bodyweight" || type === "banded") cleanSets = sets.filter((s) => Number(s.reps) > 0).map((s) => ({ reps: Number(s.reps) }));
     else cleanSets = sets.filter((s) => Number(s.duration) > 0).map((s) => ({ duration: Number(s.duration) }));
     if (!exerciseName.trim() || cleanSets.length === 0) return;
+
+    const useDirectTest = isTest && testMode === "direct";
+    if (useDirectTest && (!activeTestLabel || !testValue)) return;
+
+    if (useDirectTest && isCustomTest) {
+      await api("/api/test-types", { method: "POST", body: JSON.stringify({ name: activeTestLabel, unit: activeTestUnit }) });
+    }
 
     await api("/api/workouts", {
       method: "POST",
@@ -96,13 +137,21 @@ export default function WorkoutsPage() {
         isWarmup,
         isTest,
         sets: cleanSets,
+        ...(useDirectTest ? { testType: activeTestLabel, testUnit: activeTestUnit, testValue: Number(testValue) } : {}),
       }),
     });
     resetForm();
     loadLogs();
+    if (useDirectTest && isCustomTest) loadTestTypeLibrary();
   }
 
   const isTimeBased = type === "timed" || type === "sprint";
+
+  async function deleteLog(id: string) {
+    if (!confirm("Delete this logged workout? This can't be undone.")) return;
+    await api(`/api/workouts/${id}`, { method: "DELETE" });
+    loadLogs();
+  }
 
   return (
     <div className="space-y-8">
@@ -148,6 +197,54 @@ export default function WorkoutsPage() {
             <label className={tinyCheck}><input type="checkbox" checked={isWarmup} onChange={(e) => setIsWarmup(e.target.checked)} /> Warm-up</label>
             <label className={tinyCheck + " text-accent"}><input type="checkbox" checked={isTest} onChange={(e) => setIsTest(e.target.checked)} /> Mark as Test</label>
           </div>
+
+          {isTest && (
+            <div className="bg-raised border border-edge rounded p-3 space-y-2">
+              <div className="text-xs text-faint">How should this test be recorded?</div>
+              <select className={inputClass} value={testMode} onChange={(e) => setTestMode(e.target.value as "auto" | "direct")}>
+                <option value="auto">Use the weight/reps/time I logged above</option>
+                <option value="direct">Pick a test type and enter a value directly</option>
+              </select>
+              {testMode === "direct" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <select className={inputClass} value={testOptionKey} onChange={(e) => setTestOptionKey(e.target.value)}>
+                    {testOptions.map((o) => (
+                      <option key={o.key} value={o.key}>{o.label}</option>
+                    ))}
+                    <option value="custom">Custom…</option>
+                  </select>
+                  {isCustomTest ? (
+                    <input className={inputClass} placeholder="Test name" value={testCustomName} onChange={(e) => setTestCustomName(e.target.value)} />
+                  ) : (
+                    <input
+                      className={inputClass}
+                      type="number"
+                      step="any"
+                      placeholder={`Value${activeTestUnit ? ` (${activeTestUnit})` : ""}`}
+                      value={testValue}
+                      onChange={(e) => setTestValue(e.target.value)}
+                    />
+                  )}
+                  {isCustomTest && (
+                    <>
+                      <input className={inputClass} placeholder="Unit (in / sec / lb …)" value={testCustomUnit} onChange={(e) => setTestCustomUnit(e.target.value)} />
+                      <input
+                        className={inputClass}
+                        type="number"
+                        step="any"
+                        placeholder={`Value${activeTestUnit ? ` (${activeTestUnit})` : ""}`}
+                        value={testValue}
+                        onChange={(e) => setTestValue(e.target.value)}
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+              {testMode === "direct" && isCustomTest && (
+                <p className="text-xs text-faint">Saving a custom test type adds it to your team's list, so it's a normal option next time — here and on the Testing tab.</p>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             {sets.map((s, i) => (
@@ -201,7 +298,12 @@ export default function WorkoutsPage() {
                     {l.isWarmup && <span className="ml-2 text-xs bg-raised text-faint rounded px-1.5 py-0.5">Warm-up</span>}
                     {l.isTest && <span className="ml-2 text-xs bg-raised text-accent rounded px-1.5 py-0.5">Test</span>}
                   </span>
-                  <span className="font-mono text-chalk text-xs">{summary}</span>
+                  <span className="flex items-center gap-3 flex-shrink-0">
+                    <span className="font-mono text-chalk text-xs">{summary}</span>
+                    <button type="button" onClick={() => deleteLog(l.id)} className="text-faint hover:text-red-400 text-xs" title="Delete this logged workout">
+                      ✕
+                    </button>
+                  </span>
                 </div>
               </li>
             );

@@ -18,16 +18,6 @@ enum WearableSource {
   GARMIN
 }
 
-// FULL = can see and edit every athlete on the team (the default — every
-// coach had this before co-coach permissions existed). RESTRICTED = can
-// still SEE every athlete's plans/progress, but can only create, change or
-// delete a workout/test/profile/plan-assignment for an athlete they've
-// been explicitly granted (see CoachAthleteAccess).
-enum CoachAccessLevel {
-  FULL
-  RESTRICTED
-}
-
 model Team {
   id        String   @id @default(uuid())
   name      String
@@ -37,8 +27,6 @@ model Team {
   programs Program[]
   exerciseLibrary ExerciseLibraryItem[]
   testTypeLibrary TestTypeLibraryItem[]
-  invites  Invite[]
-  messages Message[]
 }
 
 model User {
@@ -51,44 +39,12 @@ model User {
   team         Team     @relation(fields: [teamId], references: [id])
   createdAt    DateTime @default(now())
 
-  // Only meaningful when role = COACH. Ignored for athletes.
-  accessLevel  CoachAccessLevel @default(FULL)
-  // Only meaningful when role = COACH. The head coach owns the team — only
-  // they can invite/manage assistant coaches, and only the platform admin
-  // (see isPlatformAdmin) can invite/suspend/remove a head coach. Set true
-  // automatically when someone accepts an admin-sent "new team" invite.
-  isHeadCoach  Boolean          @default(false)
-  // True only for the one platform-owner account (set via the ADMIN_EMAIL
-  // deploy setting, never through any UI) — controls the Admin page.
-  isPlatformAdmin Boolean       @default(false)
-  // A suspended account can't log in (checked fresh on every request, not
-  // just at login, so it takes effect immediately). Only ever set via the
-  // Admin page, and only ever applies to the one suspended account itself.
-  suspended    Boolean          @default(false)
-
-  // Coach's private notes about an athlete. Only meaningful when
-  // role = ATHLETE; never shown to the athlete themselves, only to coaches.
-  injuryHistory String? @db.Text
-  needsAnalysis String? @db.Text
-  archetype     String? @db.Text
-  generalNotes  String? @db.Text
-
   workoutLogs         WorkoutLog[]
   testResults         TestResult[]
   wearableData        WearableData[]
   wearableAccountLinks WearableAccountLink[]
   createdPrograms     Program[]            @relation("ProgramCreator")
   programAssignments  ProgramAssignment[]
-  sentInvites         Invite[]
-  // As a coach: which athletes this coach has been granted edit access to
-  // (only checked when this coach's accessLevel is RESTRICTED).
-  athleteAccessGrants CoachAthleteAccess[] @relation("CoachAccessCoach")
-  // As an athlete: which coaches have been granted edit access to them.
-  grantedToCoaches    CoachAthleteAccess[] @relation("CoachAccessAthlete")
-  // Chat: as an athlete, the messages in their own thread with the
-  // coaching staff; as anyone, the messages they personally sent.
-  athleteMessages     Message[]            @relation("MessageThreadAthlete")
-  sentMessages        Message[]            @relation("MessageSender")
 }
 
 model Program {
@@ -152,10 +108,6 @@ model ProgramExercise {
   reps         Int?
   percentOfMax Float?
   weight       Float?
-  // Target bar speed (velocity-based training), in meters/second. Optional —
-  // only set when the coach wants a velocity target instead of/alongside a
-  // weight or %1RM target.
-  goalBarSpeed Float?
   methodName   String?
   band         String?
   distance     String?
@@ -164,7 +116,6 @@ model ProgramExercise {
   restSeconds  String?
   isWarmup     Boolean  @default(false)
   isTest       Boolean  @default(false)
-  testUnit     String?
   groupId      String?
   groupLabel   String?
   order        Int      @default(0)
@@ -281,72 +232,4 @@ model TestTypeLibraryItem {
   createdAt DateTime @default(now())
 
   @@unique([teamId, name])
-}
-
-// A one-time link a coach generates for a specific email address, so only
-// someone the coach actually invited can create an athlete login on their
-// team — there's no more open "paste in a Team ID" self-registration.
-model Invite {
-  id          String    @id @default(uuid())
-  // Null for a head-coach invite sent by the platform admin — that invite
-  // isn't tied to any existing team, since accepting it creates a brand
-  // new one. Always set for an athlete or same-team-coach invite.
-  teamId      String?
-  team        Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  email       String
-  role        Role      @default(ATHLETE)
-  // Only meaningful when role = COACH. true = this invite creates a brand
-  // new, separate team (with this person as its sole, full-access coach) —
-  // used for "give them a whole separate team, fresh slate" invites.
-  // false = they join the inviting coach's own team instead.
-  newTeam     Boolean   @default(false)
-  // Only meaningful when role = COACH && newTeam = false (a same-team
-  // co-coach invite). FULL = can edit every athlete once they join.
-  // RESTRICTED = can only edit the athletes listed in athleteAccessIds
-  // (chosen by the inviting coach) — they can still see everyone's
-  // plans/progress either way.
-  accessLevel      CoachAccessLevel @default(FULL)
-  athleteAccessIds Json?
-  token       String    @unique
-  invitedById String
-  invitedBy   User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
-  usedAt      DateTime?
-  expiresAt   DateTime
-  createdAt   DateTime  @default(now())
-
-  @@index([teamId])
-}
-
-// A grant letting a RESTRICTED coach edit one specific athlete's workouts,
-// tests, profile, and plan assignments. A FULL-access coach doesn't need
-// any rows here — this table is only ever consulted when the coach's own
-// accessLevel is RESTRICTED. Every coach, restricted or not, can already
-// VIEW every athlete on the team; this only gates writes.
-model CoachAthleteAccess {
-  id        String   @id @default(uuid())
-  coachId   String
-  coach     User     @relation("CoachAccessCoach", fields: [coachId], references: [id], onDelete: Cascade)
-  athleteId String
-  athlete   User     @relation("CoachAccessAthlete", fields: [athleteId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-
-  @@unique([coachId, athleteId])
-}
-
-// One shared chat thread per athlete — the athlete talks to "the coaching
-// staff," not to one specific coach, and any coach on the team can read or
-// reply (same as every coach already being able to see that athlete's
-// plans/progress — chat isn't gated by the per-athlete edit permission).
-model Message {
-  id        String   @id @default(uuid())
-  teamId    String
-  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  athleteId String
-  athlete   User     @relation("MessageThreadAthlete", fields: [athleteId], references: [id], onDelete: Cascade)
-  senderId  String
-  sender    User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
-  body      String   @db.Text
-  createdAt DateTime @default(now())
-
-  @@index([teamId, athleteId])
 }

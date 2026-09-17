@@ -7,5 +7,7 @@ router.post("/register-team", ctrl.registerTeamAndCoach);
 router.post("/register-athlete", ctrl.registerAthlete);
 router.post("/login", ctrl.login);
 router.get("/me", authenticate, ctrl.me);
+router.patch("/me", authenticate, ctrl.updateMe);
+router.post("/change-password", authenticate, ctrl.changePassword);
 
 export default router;

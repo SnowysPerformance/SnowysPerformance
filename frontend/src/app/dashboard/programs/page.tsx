@@ -34,6 +34,12 @@ export default function ProgramsPage() {
     load();
   }
 
+  async function deleteProgram(program: any) {
+    if (!confirm(`Delete "${program.name}"? This removes the whole plan — every phase, week, and exercise in it — for everyone it's assigned to. This can't be undone.`)) return;
+    await api(`/api/programs/${program.id}`, { method: "DELETE" });
+    load();
+  }
+
   function openAssign(program: any) {
     if (expandedId === program.id) {
       setExpandedId(null);
@@ -84,9 +90,14 @@ export default function ProgramsPage() {
                   {p.name}
                 </Link>
                 {isCoach && (
-                  <button onClick={() => openAssign(p)} className="text-xs text-muted hover:text-primary flex-shrink-0">
-                    {expandedId === p.id ? "Close" : "Assign to athletes ▾"}
-                  </button>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <button onClick={() => openAssign(p)} className="text-xs text-muted hover:text-primary">
+                      {expandedId === p.id ? "Close" : "Assign to athletes ▾"}
+                    </button>
+                    <button onClick={() => deleteProgram(p)} className="text-xs text-faint hover:text-red-400" title="Delete this plan">
+                      Delete
+                    </button>
+                  </div>
                 )}
               </div>
               {p.assignments?.length > 0 && expandedId !== p.id && (
