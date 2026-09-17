@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
@@ -7,7 +7,18 @@ import { TEST_PRESETS } from "@/lib/testPresets";
 
 type SetRow = { weight: string; reps: string; duration: string };
 
+// useSearchParams() requires a <Suspense> boundary around it (Next.js
+// build-time requirement), so the default export just supplies that and the
+// real page lives in WorkoutsPageInner.
 export default function WorkoutsPage() {
+  return (
+    <Suspense fallback={<p className="text-faint text-sm">Loading…</p>}>
+      <WorkoutsPageInner />
+    </Suspense>
+  );
+}
+
+function WorkoutsPageInner() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const [athletes, setAthletes] = useState<any[]>([]);

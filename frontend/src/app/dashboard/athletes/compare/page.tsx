@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -14,7 +14,18 @@ const FLAG_STYLES: Record<string, string> = {
   INSUFFICIENT_DATA: "bg-raised text-faint border-edge",
 };
 
+// useSearchParams() requires a <Suspense> boundary around it (Next.js
+// build-time requirement), so the default export just supplies that and the
+// real page lives in CompareAthletesPageInner.
 export default function CompareAthletesPage() {
+  return (
+    <Suspense fallback={<p className="text-faint text-sm">Loading…</p>}>
+      <CompareAthletesPageInner />
+    </Suspense>
+  );
+}
+
+function CompareAthletesPageInner() {
   const searchParams = useSearchParams();
   const ids = (searchParams.get("ids") || "").split(",").filter(Boolean);
   const [profiles, setProfiles] = useState<any[]>([]);
