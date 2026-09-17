@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { computePRs } from "@/lib/prs";
 
 type SetRow = { weight: string; reps: string; duration: string };
 const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none w-full";
@@ -82,6 +83,7 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
   }
 
   const isTimeBased = type === "timed" || type === "sprint";
+  const { prMap } = useMemo(() => computePRs(logs), [logs]);
 
   return (
     <div className="space-y-8">
@@ -170,6 +172,9 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
                   {l.label ? ` — ${l.label}` : ""} — <span className="font-medium">{l.exerciseName}</span>
                   {l.isWarmup && <span className="ml-2 text-xs bg-raised text-faint rounded px-1.5 py-0.5">Warm-up</span>}
                   {l.isTest && <span className="ml-2 text-xs bg-raised text-accent rounded px-1.5 py-0.5">Test</span>}
+                  {prMap[l.id]?.weightPR && (
+                    <span className="ml-2 text-xs bg-chalk text-accenttext font-bold rounded px-1.5 py-0.5 tracking-wide">PR</span>
+                  )}
                 </span>
                 <span className="font-mono text-chalk text-xs">{summary}</span>
               </li>
