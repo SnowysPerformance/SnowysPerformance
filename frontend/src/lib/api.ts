@@ -31,15 +31,6 @@ export function getUser(): any | null {
   return raw ? JSON.parse(raw) : null;
 }
 
-// After a self-service account change (name/email), patch the locally
-// stored user so the rest of the app (nav, "logged in as", etc.) reflects
-// it immediately without requiring a re-login.
-export function updateStoredUser(patch: any) {
-  const current = getUser();
-  if (!current) return;
-  localStorage.setItem("user", JSON.stringify({ ...current, ...patch }));
-}
-
 export function clearSession() {
   localStorage.removeItem("token");
   localStorage.removeItem("user");

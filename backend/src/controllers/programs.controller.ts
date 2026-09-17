@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { prisma } from "../db";
-import { checkCanEditAthlete } from "../utils/permissions";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -69,8 +68,6 @@ export async function assignProgram(req: Request, res: Response) {
   if (!athlete || athlete.teamId !== req.user!.teamId || athlete.role !== "ATHLETE") {
     return res.status(404).json({ error: "Athlete not found on your team" });
   }
-  const permission = await checkCanEditAthlete(req, athleteId);
-  if (!permission.ok) return res.status(permission.status).json({ error: permission.error });
   const assignment = await prisma.programAssignment.upsert({
     where: { programId_athleteId: { programId: program.id, athleteId } },
     update: {},
@@ -83,8 +80,6 @@ export async function unassignProgram(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
   const program = await prisma.program.findUnique({ where: { id: req.params.id } });
   if (!program || program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Program not found" });
-  const permission = await checkCanEditAthlete(req, req.params.athleteId);
-  if (!permission.ok) return res.status(permission.status).json({ error: permission.error });
   await prisma.programAssignment.deleteMany({ where: { programId: program.id, athleteId: req.params.athleteId } });
   res.status(204).send();
 }
@@ -220,7 +215,6 @@ export async function addExercise(req: Request, res: Response) {
       reps: b.reps ? Number(b.reps) : null,
       percentOfMax: b.percentOfMax ? Number(b.percentOfMax) : null,
       weight: b.weight ? Number(b.weight) : null,
-      goalBarSpeed: b.goalBarSpeed ? Number(b.goalBarSpeed) : null,
       methodName: b.methodName || null,
       band: b.band || null,
       distance: b.distance || null,
@@ -229,7 +223,6 @@ export async function addExercise(req: Request, res: Response) {
       restSeconds: b.restSeconds || null,
       isWarmup: !!b.isWarmup,
       isTest: !!b.isTest,
-      testUnit: b.testUnit || null,
       notes: b.notes || null,
     },
   });
@@ -255,7 +248,6 @@ export async function updateExercise(req: Request, res: Response) {
       reps: b.reps !== undefined ? (b.reps ? Number(b.reps) : null) : existing.reps,
       percentOfMax: b.percentOfMax !== undefined ? (b.percentOfMax ? Number(b.percentOfMax) : null) : existing.percentOfMax,
       weight: b.weight !== undefined ? (b.weight ? Number(b.weight) : null) : existing.weight,
-      goalBarSpeed: b.goalBarSpeed !== undefined ? (b.goalBarSpeed ? Number(b.goalBarSpeed) : null) : existing.goalBarSpeed,
       methodName: b.methodName !== undefined ? b.methodName : existing.methodName,
       band: b.band !== undefined ? b.band : existing.band,
       distance: b.distance !== undefined ? b.distance : existing.distance,
@@ -264,7 +256,6 @@ export async function updateExercise(req: Request, res: Response) {
       restSeconds: b.restSeconds !== undefined ? b.restSeconds : existing.restSeconds,
       isWarmup: b.isWarmup !== undefined ? !!b.isWarmup : existing.isWarmup,
       isTest: b.isTest !== undefined ? !!b.isTest : existing.isTest,
-      testUnit: b.testUnit !== undefined ? b.testUnit : existing.testUnit,
       groupId: b.groupId !== undefined ? b.groupId : existing.groupId,
       groupLabel: b.groupLabel !== undefined ? b.groupLabel : existing.groupLabel,
     },

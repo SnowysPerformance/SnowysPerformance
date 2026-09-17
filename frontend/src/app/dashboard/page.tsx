@@ -6,12 +6,10 @@ export default function DashboardHome() {
   return (
     <div>
       <h1 className="font-display text-2xl font-semibold mb-2">Welcome, {user?.name}</h1>
-      {user?.role === "COACH" && (
-        <p className="text-faint text-sm">
-          {user?.isHeadCoach ? "You're the head coach of this team." : "You're an assistant coach on this team."}
-          {user?.isPlatformAdmin && " You're also the platform admin — see the Admin page."}
-        </p>
-      )}
+      <p className="text-faint text-sm">
+        Team ID: <span className="font-mono text-muted">{user?.teamId}</span>
+        {user?.role === "COACH" && " — share this with athletes so they can register."}
+      </p>
     </div>
   );
 }

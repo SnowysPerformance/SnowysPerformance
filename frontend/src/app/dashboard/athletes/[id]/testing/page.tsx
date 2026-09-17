@@ -17,8 +17,6 @@ export default function AthleteTestingTab({ params }: { params: { id: string } }
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
-  const [canEdit, setCanEdit] = useState(true);
-  const [formError, setFormError] = useState("");
 
   async function loadResults() {
     setResults(await api(`/api/tests?athleteId=${athleteId}`));
@@ -29,7 +27,6 @@ export default function AthleteTestingTab({ params }: { params: { id: string } }
   useEffect(() => {
     loadResults();
     loadLibrary();
-    api(`/api/teams/me/athletes/${athleteId}`).then((a) => setCanEdit(a.canEdit !== false)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
 
@@ -52,7 +49,6 @@ export default function AthleteTestingTab({ params }: { params: { id: string } }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!activeLabel || !value) return;
-    setFormError("");
     setSaving(true);
     try {
       if (isCustom) {
@@ -67,8 +63,6 @@ export default function AthleteTestingTab({ params }: { params: { id: string } }
         setCustomUnit("");
       }
       await Promise.all([loadResults(), loadLibrary()]);
-    } catch (err: any) {
-      setFormError(err.message);
     } finally {
       setSaving(false);
     }
@@ -108,15 +102,8 @@ export default function AthleteTestingTab({ params }: { params: { id: string } }
 
   return (
     <div className="space-y-8">
-      {!canEdit && (
-        <p className="text-xs text-amber-400">
-          You have view-only access to this athlete — you can see their test history below, but logging or deleting needs edit permission.
-        </p>
-      )}
-      {canEdit && (
       <form onSubmit={submit} className="bg-surface border border-edge rounded-lg p-4 max-w-2xl space-y-3">
         <div className="font-display text-sm uppercase tracking-wide text-muted">Log a Test Result</div>
-        {formError && <div className="text-red-400 text-sm">{formError}</div>}
         <div className="grid grid-cols-2 gap-3">
           <select className={inputClass} value={optionKey} onChange={(e) => setOptionKey(e.target.value)}>
             {options.map((o) => (
@@ -148,7 +135,6 @@ export default function AthleteTestingTab({ params }: { params: { id: string } }
         </div>
         {isCustom && <p className="text-xs text-faint">Saving a custom test type adds it to your team's list, so it shows up as a normal option from now on.</p>}
       </form>
-      )}
 
       {testTypes.length > 0 && (
         <div className="bg-surface border border-edge rounded p-4">
@@ -184,27 +170,7 @@ export default function AthleteTestingTab({ params }: { params: { id: string } }
           {rows.map((r) => (
             <li key={r.id} className="bg-surface border border-edge rounded p-3 flex justify-between text-sm">
               <span>{new Date(r.date).toLocaleDateString()} — {r.testType}</span>
-              <span className="flex items-center gap-3 flex-shrink-0">
-                <span className="font-mono text-good">{r.value} {r.unit}</span>
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!confirm("Delete this test result? This can't be undone.")) return;
-                      try {
-                        await api(`/api/tests/${r.id}`, { method: "DELETE" });
-                        loadResults();
-                      } catch (err: any) {
-                        setFormError(err.message);
-                      }
-                    }}
-                    className="text-faint hover:text-red-400 text-xs"
-                    title="Delete this test result"
-                  >
-                    ✕
-                  </button>
-                )}
-              </span>
+              <span className="font-mono text-good">{r.value} {r.unit}</span>
             </li>
           ))}
         </ul>

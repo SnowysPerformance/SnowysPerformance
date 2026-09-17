@@ -8,7 +8,7 @@ async function main() {
 
   const coachPasswordHash = await bcrypt.hash("password123", 10);
   const coach = await prisma.user.create({
-    data: { email: "coach@example.com", passwordHash: coachPasswordHash, name: "Coach Snow", role: "COACH", teamId: team.id, isHeadCoach: true },
+    data: { email: "coach@example.com", passwordHash: coachPasswordHash, name: "Coach Snow", role: "COACH", teamId: team.id },
   });
 
   const athletePasswordHash = await bcrypt.hash("password123", 10);
@@ -73,7 +73,7 @@ async function main() {
   console.log("Seed complete.");
   console.log("Coach login:   coach@example.com / password123");
   console.log("Athlete login: athlete@example.com / password123");
-  console.log("To add another athlete, sign in as the coach and use \"Invite an Athlete\" on the Athletes page.");
+  console.log(`Team ID (for a second athlete to self-register): ${team.id}`);
 }
 
 main()

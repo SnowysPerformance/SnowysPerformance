@@ -136,24 +136,8 @@ npm run dev                   # http://localhost:3000
 - Coach: `coach@example.com` / `password123`
 - Athlete: `athlete@example.com` / `password123`
 
-Athlete accounts are invite-only — there's no open self-registration.
-Sign in as the coach and use "Invite an Athlete" on the Athletes page to
-send a one-time link (copied to your clipboard automatically), or "Add an
-Athlete Directly" to set a login and password for them yourself.
-
-## Planned / on the roadmap (not built yet)
-
-- **Privacy policy and other legal requirements** — before this is used by
-  real athletes/clients outside of Mark's own team, it needs a privacy
-  policy, terms of service, and a review of what data-protection rules apply
-  (e.g. handling of minors' data if any athletes are under 18). Not built
-  yet — flagged here as a to-do, not a feature.
-- **Wearable integrations** (WHOOP / Garmin / HealthKit) — endpoints exist
-  but need real developer credentials from each provider before they're
-  live (see the table above).
-- **Visual polish pass** — a general pass on styling/layout consistency.
-- **Mobile responsiveness pass** — checking and tightening up the layout on
-  phone-sized screens.
+The seed script also prints the generated **Team ID** — a second athlete can
+self-register with it from the Register page.
 
 ## What's intentionally minimal (and where to extend it)
 

@@ -1,10 +1,8 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
-import { TEST_PRESETS } from "@/lib/testPresets";
-import { downloadJSON, copyText, safeFileName } from "@/lib/dataTransfer";
 
 const e1rm = (weight: number, reps: number) => (reps <= 1 ? weight : weight * (1 + reps / 30));
 const round5 = (n: number) => Math.round(n / 5) * 5;
@@ -28,74 +26,13 @@ function computedWeight(ex: any, bestE1rm: Record<string, number>): number | nul
   return round5((max * ex.percentOfMax) / 100);
 }
 function targetLabel(ex: any, bestE1rm: Record<string, number>): string {
-  let base = "—";
   if (!ex.type || ex.type === "weighted") {
     const w = computedWeight(ex, bestE1rm);
-    base = w ? `${w} lb` : "need 1RM";
-  } else if (ex.type === "banded") {
-    base = ex.band || "";
-  } else if (ex.type === "sprint") {
-    base = `${ex.distance || ""}yd${ex.resisted ? " (resisted)" : ""}`;
+    return w ? `${w} lb` : "need 1RM";
   }
-  if (ex.goalBarSpeed) base += `${base && base !== "—" ? " · " : ""}≥${ex.goalBarSpeed} m/s`;
-  return base || "—";
-}
-
-// Groups a day's exercises into supersets ("blocks") vs. standalone
-// exercises — shared by the on-screen day cards and the plain-text export
-// below, so both always agree on how a day is laid out.
-function buildBlocks(day: any) {
-  const seen = new Set<string>();
-  const blocks: any[] = [];
-  let letterIdx = 0;
-  day.exercises.forEach((ex: any) => {
-    if (ex.groupId) {
-      if (seen.has(ex.groupId)) return;
-      seen.add(ex.groupId);
-      const members = day.exercises.filter((x: any) => x.groupId === ex.groupId);
-      blocks.push({ type: "group", groupId: ex.groupId, label: ex.groupLabel, letter: String.fromCharCode(65 + letterIdx++), members });
-    } else blocks.push({ type: "single", ex });
-  });
-  return blocks;
-}
-
-function exerciseLine(ex: any, bestE1rm: Record<string, number>): string {
-  if (ex.isTest) {
-    const n = ex.sets || 1;
-    return `${ex.exerciseName} [TEST] — ${n} attempt${n > 1 ? "s" : ""}${ex.testUnit ? ` (${ex.testUnit})` : ""}`;
-  }
-  const isTimeBased = ex.type === "timed" || ex.type === "sprint";
-  const repsOrTime = isTimeBased ? "timed" : `${ex.reps || "?"} reps`;
-  return `${ex.exerciseName}${ex.methodName ? ` (${ex.methodName})` : ""}${ex.isWarmup ? " [warm-up]" : ""} — ${ex.sets || "?"}x${repsOrTime} @ ${targetLabel(ex, bestE1rm)}${ex.restSeconds ? ` · rest ${ex.restSeconds}s` : ""}`;
-}
-
-// A quick, shareable plain-text summary of one week of a plan — for texting
-// or emailing an athlete who isn't looking at the site.
-function buildWeekPlainText(programName: string, phase: any, week: any, bestE1rm: Record<string, number>): string {
-  const lines: string[] = [];
-  lines.push(`${programName}`);
-  lines.push(`${phase.name} · ${week.name}`);
-  lines.push("");
-  week.days.forEach((day: any) => {
-    lines.push(`${day.label}:`);
-    if (!day.exercises || day.exercises.length === 0) {
-      lines.push("  Rest day");
-      lines.push("");
-      return;
-    }
-    buildBlocks(day).forEach((b: any) => {
-      if (b.type === "single") {
-        lines.push(`  ${exerciseLine(b.ex, bestE1rm)}`);
-      } else {
-        lines.push(`  [${b.label}]`);
-        b.members.forEach((m: any, i: number) => {
-          lines.push(`    ${b.letter}${i + 1}. ${exerciseLine(m, bestE1rm)}`);
-        });
-      }
-    });
-    lines.push("");
-  });
-  return lines.join("\n");
+  if (ex.type === "banded") return ex.band || "";
+  if (ex.type === "sprint") return `${ex.distance || ""}yd${ex.resisted ? " (resisted)" : ""}`;
+  return "—";
 }
 
 const inputClass = "bg-inputbg border border-edge rounded px-2 py-1.5 text-xs placeholder-faint focus:border-accent outline-none w-full";
@@ -111,22 +48,15 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   const [bestE1rm, setBestE1rm] = useState<Record<string, number>>({});
   const [previewAthleteId, setPreviewAthleteId] = useState("");
   const [library, setLibrary] = useState<any[]>([]);
-  const [testTypeLibrary, setTestTypeLibrary] = useState<any[]>([]);
 
-  function loadTestTypeLibrary() {
-    api("/api/test-types").then(setTestTypeLibrary).catch(console.error);
-  }
   useEffect(() => {
     api("/api/library").then(setLibrary).catch(console.error);
-    loadTestTypeLibrary();
   }, []);
 
   const [phaseForm, setPhaseForm] = useState({ name: "", weeks: "", goal: "" });
   const [phaseFormOpen, setPhaseFormOpen] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [groupLabel, setGroupLabel] = useState("");
-  const [copyConfirm, setCopyConfirm] = useState(false);
-  const [weekTextFallback, setWeekTextFallback] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -212,47 +142,28 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
     await api(`/api/programs/days/${dayId}/group/${groupId}/ungroup`, { method: "POST" });
     load();
   }
-  // Send the athlete to the Log page pre-loaded for this specific prescribed
-  // exercise. If the coach marked it as a Test in the plan, this opens
-  // straight into the "Log a Test" tab with that test type already picked
-  // (and one attempt row per prescribed set), instead of the workout form.
-  function logThis(ex: any) {
-    const qs = new URLSearchParams();
-    qs.set("exercise", ex.exerciseName);
-    if (ex.isTest) {
-      qs.set("isTest", "1");
-      if (ex.sets) qs.set("sets", String(ex.sets));
-    }
-    router.push(`/dashboard/workouts?${qs.toString()}`);
+  function logThis(exerciseName: string) {
+    router.push(`/dashboard/workouts?exercise=${encodeURIComponent(exerciseName)}`);
   }
 
-  async function exportProgram() {
-    const data = await api(`/api/data/export/program/${params.id}`);
-    downloadJSON(`${safeFileName(program.name)}-program.json`, data);
-  }
-
-  async function copyWeekAsText() {
-    if (!phase || !week) return;
-    const text = buildWeekPlainText(program.name, phase, week, bestE1rm);
-    const ok = await copyText(text);
-    if (ok) {
-      setCopyConfirm(true);
-      setTimeout(() => setCopyConfirm(false), 2000);
-    } else {
-      setWeekTextFallback(text);
-    }
+  function buildBlocks(day: any) {
+    const seen = new Set<string>();
+    const blocks: any[] = [];
+    let letterIdx = 0;
+    day.exercises.forEach((ex: any) => {
+      if (ex.groupId) {
+        if (seen.has(ex.groupId)) return;
+        seen.add(ex.groupId);
+        const members = day.exercises.filter((x: any) => x.groupId === ex.groupId);
+        blocks.push({ type: "group", groupId: ex.groupId, label: ex.groupLabel, letter: String.fromCharCode(65 + letterIdx++), members });
+      } else blocks.push({ type: "single", ex });
+    });
+    return blocks;
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-1">
-        <h1 className="font-display text-xl font-semibold">{program.name}</h1>
-        {isCoach && (
-          <button onClick={exportProgram} className="text-xs border border-edge rounded px-3 py-1.5 text-muted hover:text-primary flex-shrink-0">
-            Export this plan
-          </button>
-        )}
-      </div>
+      <h1 className="font-display text-xl font-semibold mb-1">{program.name}</h1>
       <datalist id="ex-lib">
         {library.map((it: any) => (
           <option key={it.id} value={it.name} />
@@ -334,26 +245,21 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
         <div className="bg-surface border border-edge rounded-lg p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="font-display text-xs uppercase tracking-wide text-muted">{phase.name} · {week.name} — Day by Day</div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <button onClick={copyWeekAsText} className="text-[11px] border border-edge rounded px-2.5 py-1 text-muted hover:text-primary">
-                {copyConfirm ? "Copied!" : "Copy week as text"}
-              </button>
-              {isCoach && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-faint">Week starts:</span>
-                  <input
-                    type="date"
-                    className={inputClass}
-                    style={{ width: 140 }}
-                    value={week.startDate ? week.startDate.slice(0, 10) : ""}
-                    onChange={async (e) => {
-                      await api(`/api/programs/weeks/${week.id}`, { method: "PATCH", body: JSON.stringify({ startDate: e.target.value || null }) });
-                      load();
-                    }}
-                  />
-                </div>
-              )}
-            </div>
+            {isCoach && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-faint">Week starts:</span>
+                <input
+                  type="date"
+                  className={inputClass}
+                  style={{ width: 140 }}
+                  value={week.startDate ? week.startDate.slice(0, 10) : ""}
+                  onChange={async (e) => {
+                    await api(`/api/programs/weeks/${week.id}`, { method: "PATCH", body: JSON.stringify({ startDate: e.target.value || null }) });
+                    load();
+                  }}
+                />
+              </div>
+            )}
           </div>
           <div className="flex gap-3 overflow-x-auto pb-2">
             {week.days.map((day: any) => {
@@ -377,13 +283,11 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                           isCoach={isCoach}
                           bestE1rm={bestE1rm}
                           library={library}
-                          testTypeLibrary={testTypeLibrary}
-                          onCustomTestTypeSaved={loadTestTypeLibrary}
                           selected={!!selected[b.ex.id]}
                           onToggleSelect={() => setSelected((s) => ({ ...s, [b.ex.id]: !s[b.ex.id] }))}
                           onUpdate={(patch: any) => updateExercise(b.ex.id, patch)}
                           onDelete={() => deleteExercise(b.ex.id)}
-                          onLogThis={() => logThis(b.ex)}
+                          onLogThis={() => logThis(b.ex.exerciseName)}
                         />
                       ) : (
                         <div key={b.groupId} className="border border-dashed border-accent bg-accentsoft rounded-lg p-2" style={{ background: "rgba(126,200,227,0.08)" }}>
@@ -399,13 +303,11 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                                 isCoach={isCoach}
                                 bestE1rm={bestE1rm}
                                 library={library}
-                                testTypeLibrary={testTypeLibrary}
-                                onCustomTestTypeSaved={loadTestTypeLibrary}
                                 selected={!!selected[m.id]}
                                 onToggleSelect={() => setSelected((s) => ({ ...s, [m.id]: !s[m.id] }))}
                                 onUpdate={(patch: any) => updateExercise(m.id, patch)}
                                 onDelete={() => deleteExercise(m.id)}
-                                onLogThis={() => logThis(m)}
+                                onLogThis={() => logThis(m.exerciseName)}
                               />
                             </div>
                           ))}
@@ -423,7 +325,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                     <button onClick={() => addExercise(day.id)} className="w-full text-xs border border-edge rounded px-2 py-1.5 mt-2 text-muted hover:text-primary">+ Add exercise</button>
                   )}
                   {!isCoach && day.exercises.length > 0 && (
-                    <button onClick={() => logThis(day.exercises[0])} className="w-full text-xs bg-accent text-accenttext font-semibold rounded px-2 py-1.5 mt-2">
+                    <button onClick={() => logThis(day.exercises[0]?.exerciseName)} className="w-full text-xs bg-accent text-accenttext font-semibold rounded px-2 py-1.5 mt-2">
                       Log this day
                     </button>
                   )}
@@ -433,172 +335,31 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
           </div>
         </div>
       )}
-
-      {weekTextFallback !== null && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setWeekTextFallback(null)}>
-          <div className="bg-surface border border-edge rounded-lg p-4 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
-            <div className="font-display text-sm font-semibold mb-2">Copy this week</div>
-            <p className="text-xs text-faint mb-2">Your browser blocked the automatic copy — tap inside the box below to select the text, then copy it (Ctrl/Cmd+C).</p>
-            <textarea
-              readOnly
-              value={weekTextFallback}
-              onFocus={(e) => e.target.select()}
-              className="w-full h-64 bg-inputbg border border-edge rounded p-2 text-xs font-mono"
-            />
-            <button onClick={() => setWeekTextFallback(null)} className="mt-2 text-xs text-accent underline">Close</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-function ExerciseCard({ ex, isCoach, bestE1rm, library, testTypeLibrary, onCustomTestTypeSaved, selected, onToggleSelect, onUpdate, onDelete, onLogThis }: any) {
+function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect, onUpdate, onDelete, onLogThis }: any) {
   const isTimeBased = ex.type === "timed" || ex.type === "sprint";
   const libItem = (library || []).find((it: any) => it.name === ex.exerciseName);
   const regressions: string[] = libItem?.regressions || [];
   const progressions: string[] = libItem?.progressions || [];
-
-  // Same preset + team-library + custom test-type list used when actually
-  // logging a test, so what a coach prescribes here always matches an
-  // option the athlete will see on the Log page.
-  const testOptions = useMemo(() => {
-    const presetLabels = new Set(TEST_PRESETS.map((p) => p.label));
-    const fromLibrary = (testTypeLibrary || [])
-      .filter((li: any) => !presetLabels.has(li.name))
-      .map((li: any) => ({ key: `lib:${li.id}`, label: li.name, unit: li.unit || "" }));
-    return [...TEST_PRESETS.map((p) => ({ key: `preset:${p.key}`, label: p.label, unit: p.unit })), ...fromLibrary];
-  }, [testTypeLibrary]);
-
   if (!isCoach) {
-    // Only show what the coach actually filled in — no "?" placeholders
-    // for blank fields. If the coach left the load/reps open-ended on
-    // purpose, that's flagged plainly as something to fill in while
-    // logging, instead of a cryptic dash or "need 1RM".
-    if (ex.isTest) {
-      const n = ex.sets || 1;
-      return (
-        <div className="bg-surface border border-edgesoft rounded p-2">
-          <div className="text-xs font-semibold flex items-center gap-1 flex-wrap">
-            {ex.exerciseName}
-            <span className="text-[10px] bg-raised text-accent rounded px-1">Test</span>
-          </div>
-          <div className="text-[11px] text-muted mt-1">{n} attempt{n > 1 ? "s" : ""}{ex.testUnit ? ` (${ex.testUnit})` : ""}</div>
-          <button onClick={onLogThis} className="text-[10px] text-accent underline mt-1">Log this</button>
-        </div>
-      );
-    }
-
-    const bits: string[] = [];
-    if (ex.sets) bits.push(`${ex.sets} set${ex.sets > 1 ? "s" : ""}`);
-    if (isTimeBased) {
-      if (ex.duration) bits.push(`${ex.duration}s`);
-    } else if (ex.reps) {
-      bits.push(`${ex.reps} reps`);
-    }
-    const weightTarget = ex.type === "weighted" ? computedWeight(ex, bestE1rm) : null;
-    if (ex.type === "weighted" && weightTarget) bits.push(`${weightTarget} lb`);
-    if (ex.type === "banded" && ex.band) bits.push(ex.band);
-    if (ex.type === "sprint" && ex.distance) bits.push(`${ex.distance}yd${ex.resisted ? " (resisted)" : ""}`);
-    if (ex.goalBarSpeed) bits.push(`≥${ex.goalBarSpeed} m/s`);
-    if (ex.restSeconds) bits.push(`rest ${ex.restSeconds}s`);
-
-    // Nothing prescribed for load/reps at all — the coach is leaving it
-    // to the athlete to decide when they log it, rather than it being an
-    // oversight, so say so plainly instead of showing nothing or "?".
-    const nothingToShowYet = !ex.sets && !ex.reps && !ex.duration && !weightTarget && !ex.goalBarSpeed;
-
     return (
       <div className="bg-surface border border-edgesoft rounded p-2">
         <div className="text-xs font-semibold flex items-center gap-1 flex-wrap">
           {ex.exerciseName}
           {ex.methodName && <span className="text-[10px] bg-raised text-faint rounded px-1">{ex.methodName}</span>}
           {ex.isWarmup && <span className="text-[10px] bg-raised text-faint rounded px-1">Warm-up</span>}
+          {ex.isTest && <span className="text-[10px] bg-raised text-accent rounded px-1">Test</span>}
         </div>
-        {bits.length > 0 && <div className="text-[11px] text-muted mt-1">{bits.join(" · ")}</div>}
-        {nothingToShowYet && <div className="text-[11px] text-faint mt-1 italic">You'll fill this in when you log it</div>}
+        <div className="text-[11px] text-muted mt-1">
+          {ex.sets || "?"}x{isTimeBased ? `${ex.duration || "?"}s` : ex.reps || "?"} — {targetLabel(ex, bestE1rm)}
+        </div>
         <button onClick={onLogThis} className="text-[10px] text-accent underline mt-1">Log this</button>
       </div>
     );
   }
-
-  if (ex.isTest) {
-    // Prescribing a test: pick which test and how many attempts, instead of
-    // the usual exercise/weight/reps fields — this mirrors the Log a Test
-    // tab exactly, so "Log this" opens pre-filled with a matching test.
-    const matched = testOptions.find((o: any) => o.label.toLowerCase() === (ex.exerciseName || "").toLowerCase());
-    const selectedKey = matched ? matched.key : ex.exerciseName ? "custom" : "";
-    const isCustom = selectedKey === "custom";
-    const attempts = Math.max(1, Number(ex.sets) || 1);
-
-    function chooseTestType(key: string) {
-      if (key === "custom") {
-        onUpdate({ exerciseName: matched ? "" : ex.exerciseName, testUnit: matched ? "" : ex.testUnit });
-        return;
-      }
-      const opt = testOptions.find((o: any) => o.key === key);
-      if (opt) onUpdate({ exerciseName: opt.label, testUnit: opt.unit });
-    }
-    function saveCustomIfReady(name: string, unit: string) {
-      if (name.trim()) {
-        api("/api/test-types", { method: "POST", body: JSON.stringify({ name: name.trim(), unit: unit.trim() }) }).then(onCustomTestTypeSaved);
-      }
-    }
-
-    return (
-      <div className="bg-surface border border-edgesoft rounded p-2 space-y-1.5">
-        <div className="flex items-center gap-1">
-          <input type="checkbox" checked={selected} onChange={onToggleSelect} className="flex-shrink-0" />
-          <select className={inputClass} value={selectedKey} onChange={(e) => chooseTestType(e.target.value)}>
-            <option value="" disabled>Select a test…</option>
-            {testOptions.map((o: any) => (
-              <option key={o.key} value={o.key}>{o.label}</option>
-            ))}
-            <option value="custom">Custom…</option>
-          </select>
-        </div>
-        {isCustom && (
-          <div className="flex gap-1">
-            <input
-              className={inputClass}
-              placeholder="Test name"
-              value={ex.exerciseName || ""}
-              onChange={(e) => onUpdate({ exerciseName: e.target.value })}
-              onBlur={(e) => saveCustomIfReady(e.target.value, ex.testUnit || "")}
-            />
-            <input
-              className={inputClass}
-              placeholder="Unit (in / sec / lb …)"
-              value={ex.testUnit || ""}
-              onChange={(e) => onUpdate({ testUnit: e.target.value })}
-              onBlur={(e) => saveCustomIfReady(ex.exerciseName || "", e.target.value)}
-            />
-          </div>
-        )}
-        <div className="space-y-1">
-          <div className="text-[10px] text-faint">Attempts (how many sets/tries the athlete should log)</div>
-          {Array.from({ length: attempts }).map((_, i) => (
-            <div key={i} className="flex items-center gap-1">
-              <span className="text-[10px] text-faint w-4 flex-shrink-0">{i + 1}</span>
-              <div className="flex-1 h-6 bg-inputbg border border-edge rounded text-[10px] text-faint flex items-center px-2">
-                Attempt {i + 1}{ex.testUnit ? ` (${ex.testUnit})` : ""}
-              </div>
-              {attempts > 1 && (
-                <button type="button" onClick={() => onUpdate({ sets: attempts - 1 })} className="text-faint hover:text-red-400 text-[10px] flex-shrink-0">✕</button>
-              )}
-            </div>
-          ))}
-          <button type="button" onClick={() => onUpdate({ sets: attempts + 1 })} className="text-[10px] text-accent underline">+ Add attempt</button>
-        </div>
-        <input className={inputClass} type="number" placeholder="Rest between attempts (sec)" value={ex.restSeconds || ""} onChange={(e) => onUpdate({ restSeconds: e.target.value })} />
-        <div className="flex gap-2 items-center flex-wrap text-[10px] text-faint">
-          <label className="flex items-center gap-1 text-accent"><input type="checkbox" checked={ex.isTest} onChange={(e) => onUpdate({ isTest: e.target.checked })} /> Test</label>
-        </div>
-        <button onClick={onDelete} className="text-[10px] text-faint hover:text-red-400 w-full text-right">Delete</button>
-      </div>
-    );
-  }
-
   return (
     <div className="bg-surface border border-edgesoft rounded p-2 space-y-1">
       <div className="flex items-center gap-1">
@@ -649,20 +410,10 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, testTypeLibrary, onCusto
           <input className={inputClass} type="number" placeholder="Exact weight" value={ex.weight || ""} onChange={(e) => onUpdate({ weight: e.target.value })} />
         </div>
       )}
-      <input
-        className={inputClass}
-        type="number"
-        step="any"
-        placeholder="Goal bar speed (m/s)"
-        value={ex.goalBarSpeed || ""}
-        onChange={(e) => onUpdate({ goalBarSpeed: e.target.value })}
-      />
       {ex.type === "weighted" && <div className="text-[11px] bg-chalksoft text-chalk rounded px-2 py-1 text-center" style={{ background: "rgba(227,178,60,0.16)", color: "#E3B23C" }}>{targetLabel(ex, bestE1rm)}</div>}
       <div className="flex gap-2 items-center flex-wrap text-[10px] text-faint">
         <label className="flex items-center gap-1"><input type="checkbox" checked={ex.isWarmup} onChange={(e) => onUpdate({ isWarmup: e.target.checked })} /> Warm-up</label>
-        <label className="flex items-center gap-1 text-accent">
-          <input type="checkbox" checked={ex.isTest} onChange={(e) => onUpdate({ isTest: e.target.checked, sets: e.target.checked ? ex.sets || 1 : ex.sets })} /> Test
-        </label>
+        <label className="flex items-center gap-1 text-accent"><input type="checkbox" checked={ex.isTest} onChange={(e) => onUpdate({ isTest: e.target.checked })} /> Test</label>
       </div>
       <input className={inputClass} type="number" placeholder="Rest (sec)" value={ex.restSeconds || ""} onChange={(e) => onUpdate({ restSeconds: e.target.value })} />
       <button onClick={onDelete} className="text-[10px] text-faint hover:text-red-400 w-full text-right">Delete</button>
