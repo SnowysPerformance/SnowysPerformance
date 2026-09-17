@@ -26,6 +26,7 @@ model Team {
   users    User[]
   programs Program[]
   exerciseLibrary ExerciseLibraryItem[]
+  testTypeLibrary TestTypeLibraryItem[]
 }
 
 model User {
@@ -213,6 +214,22 @@ model ExerciseLibraryItem {
   regressions  Json?
   progressions Json?
   createdAt    DateTime @default(now())
+
+  @@unique([teamId, name])
+}
+
+// A team-wide library of test types, seeded by the built-in quick-entry
+// presets (Vertical Jump, WHOOP Recovery, etc.) on the frontend and grown
+// whenever a coach or athlete logs a "Custom…" test type — after that, it's
+// a normal dropdown option for the rest of the team, not something anyone
+// has to retype from scratch.
+model TestTypeLibraryItem {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name      String
+  unit      String   @default("")
+  createdAt DateTime @default(now())
 
   @@unique([teamId, name])
 }
