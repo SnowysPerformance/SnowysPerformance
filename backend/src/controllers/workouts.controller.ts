@@ -30,6 +30,10 @@ export async function createWorkoutLog(req: Request, res: Response) {
     athleteId, date, label, exerciseName, type,
     methodName, band, distance, resisted, resistance,
     restSeconds, isWarmup, isTest, sets, notes,
+    // Optional overrides so "Mark as Test" can record a test type/value/unit
+    // picked directly (e.g. "Vertical Jump" in inches) instead of always
+    // deriving the test result from the logged sets.
+    testType, testUnit, testValue,
   } = req.body;
 
   if (req.user!.role === "ATHLETE" && athleteId && athleteId !== req.user!.userId) {
@@ -62,9 +66,11 @@ export async function createWorkoutLog(req: Request, res: Response) {
 
   // Marked as a test? Also drop it into TestResult so it shows on the Testing tab automatically.
   if (isTest) {
-    const { value, unit } = buildTestValue(t, sets);
+    const hasDirectValue = testValue !== undefined && testValue !== null && testValue !== "";
+    const { value, unit } = hasDirectValue ? { value: Number(testValue), unit: testUnit || "" } : buildTestValue(t, sets);
+    const resolvedTestType = hasDirectValue && testType ? testType : exerciseName;
     await prisma.testResult.create({
-      data: { teamId: req.user!.teamId, athleteId: targetAthleteId, testType: exerciseName, unit, date: new Date(date), value },
+      data: { teamId: req.user!.teamId, athleteId: targetAthleteId, testType: resolvedTestType, unit, date: new Date(date), value },
     });
   }
 

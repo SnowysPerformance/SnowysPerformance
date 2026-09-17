@@ -124,6 +124,7 @@ export default function AthleteTestingTab({ params }: { params: { id: string } }
             className={inputClass}
             style={{ maxWidth: 180 }}
             type="number"
+            step="any"
             placeholder={`Value${activeUnit ? ` (${activeUnit})` : ""}`}
             value={value}
             onChange={(e) => setValue(e.target.value)}
