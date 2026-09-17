@@ -142,8 +142,18 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
     await api(`/api/programs/days/${dayId}/group/${groupId}/ungroup`, { method: "POST" });
     load();
   }
-  function logThis(exerciseName: string) {
-    router.push(`/dashboard/workouts?exercise=${encodeURIComponent(exerciseName)}`);
+  // Send the athlete to the Log page pre-loaded for this specific prescribed
+  // exercise. If the coach marked it as a Test in the plan, this opens
+  // straight into the "Log a Test" tab with that test type already picked
+  // (and one attempt row per prescribed set), instead of the workout form.
+  function logThis(ex: any) {
+    const qs = new URLSearchParams();
+    qs.set("exercise", ex.exerciseName);
+    if (ex.isTest) {
+      qs.set("isTest", "1");
+      if (ex.sets) qs.set("sets", String(ex.sets));
+    }
+    router.push(`/dashboard/workouts?${qs.toString()}`);
   }
 
   function buildBlocks(day: any) {
@@ -287,7 +297,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                           onToggleSelect={() => setSelected((s) => ({ ...s, [b.ex.id]: !s[b.ex.id] }))}
                           onUpdate={(patch: any) => updateExercise(b.ex.id, patch)}
                           onDelete={() => deleteExercise(b.ex.id)}
-                          onLogThis={() => logThis(b.ex.exerciseName)}
+                          onLogThis={() => logThis(b.ex)}
                         />
                       ) : (
                         <div key={b.groupId} className="border border-dashed border-accent bg-accentsoft rounded-lg p-2" style={{ background: "rgba(126,200,227,0.08)" }}>
@@ -307,7 +317,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                                 onToggleSelect={() => setSelected((s) => ({ ...s, [m.id]: !s[m.id] }))}
                                 onUpdate={(patch: any) => updateExercise(m.id, patch)}
                                 onDelete={() => deleteExercise(m.id)}
-                                onLogThis={() => logThis(m.exerciseName)}
+                                onLogThis={() => logThis(m)}
                               />
                             </div>
                           ))}
@@ -325,7 +335,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                     <button onClick={() => addExercise(day.id)} className="w-full text-xs border border-edge rounded px-2 py-1.5 mt-2 text-muted hover:text-primary">+ Add exercise</button>
                   )}
                   {!isCoach && day.exercises.length > 0 && (
-                    <button onClick={() => logThis(day.exercises[0]?.exerciseName)} className="w-full text-xs bg-accent text-accenttext font-semibold rounded px-2 py-1.5 mt-2">
+                    <button onClick={() => logThis(day.exercises[0])} className="w-full text-xs bg-accent text-accenttext font-semibold rounded px-2 py-1.5 mt-2">
                       Log this day
                     </button>
                   )}

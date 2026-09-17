@@ -43,20 +43,56 @@ export default function WorkoutsPage() {
   const [testCustomUnit, setTestCustomUnit] = useState("");
   const [testAttempts, setTestAttempts] = useState<string[]>([""]);
   const [testResults, setTestResults] = useState<any[]>([]);
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
+  const [appliedTestPrefill, setAppliedTestPrefill] = useState(false);
 
   const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none w-full";
   const tinyCheck = "flex items-center gap-1.5 text-xs text-faint whitespace-nowrap";
 
+  const testOptions = useMemo(() => {
+    const presetLabels = new Set(TEST_PRESETS.map((p) => p.label));
+    const fromLibrary = testTypeLibrary
+      .filter((li) => !presetLabels.has(li.name))
+      .map((li) => ({ key: `lib:${li.id}`, label: li.name, unit: li.unit || "" }));
+    return [...TEST_PRESETS.map((p) => ({ key: `preset:${p.key}`, label: p.label, unit: p.unit })), ...fromLibrary];
+  }, [testTypeLibrary]);
+
+  // A "Log this" / "Log this day" link from a plan can arrive as either a
+  // normal exercise (prefill the workout form) or, when the coach marked
+  // that prescribed exercise as a Test, as ?exercise=<name>&isTest=1&sets=<n>
+  // — in which case we open straight into the Log a Test tab with that test
+  // type already picked and one attempt row per prescribed set.
   useEffect(() => {
-    const prefill = searchParams.get("exercise");
-    if (prefill) setExerciseName(prefill);
+    const prefillExercise = searchParams.get("exercise");
+    const prefillIsTest = searchParams.get("isTest") === "1";
+    if (prefillExercise && !prefillIsTest) setExerciseName(prefillExercise);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (appliedTestPrefill || !libraryLoaded) return;
+    const prefillExercise = searchParams.get("exercise");
+    const prefillIsTest = searchParams.get("isTest") === "1";
+    if (!prefillExercise || !prefillIsTest) return;
+
+    setEntryKind("test");
+    const match = testOptions.find((o) => o.label.toLowerCase() === prefillExercise.toLowerCase());
+    if (match) {
+      setTestOptionKey(match.key);
+    } else {
+      setTestOptionKey("custom");
+      setTestCustomName(prefillExercise);
+    }
+    const prefillSets = Number(searchParams.get("sets") || "0");
+    if (prefillSets > 1) setTestAttempts(Array.from({ length: prefillSets }, () => ""));
+    setAppliedTestPrefill(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testOptions, libraryLoaded, appliedTestPrefill, searchParams]);
 
   useEffect(() => {
     if (user?.role === "COACH") api("/api/teams/me/athletes").then(setAthletes).catch(console.error);
     loadLogs();
     loadTestResults();
-    loadTestTypeLibrary();
+    loadTestTypeLibrary().finally(() => setLibraryLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -71,14 +107,6 @@ export default function WorkoutsPage() {
   async function loadTestTypeLibrary() {
     setTestTypeLibrary(await api("/api/test-types"));
   }
-
-  const testOptions = useMemo(() => {
-    const presetLabels = new Set(TEST_PRESETS.map((p) => p.label));
-    const fromLibrary = testTypeLibrary
-      .filter((li) => !presetLabels.has(li.name))
-      .map((li) => ({ key: `lib:${li.id}`, label: li.name, unit: li.unit || "" }));
-    return [...TEST_PRESETS.map((p) => ({ key: `preset:${p.key}`, label: p.label, unit: p.unit })), ...fromLibrary];
-  }, [testTypeLibrary]);
 
   const isCustomTest = testOptionKey === "custom";
   const activeTestOption = testOptions.find((o) => o.key === testOptionKey);
