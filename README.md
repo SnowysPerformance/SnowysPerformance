@@ -151,4 +151,4 @@ self-register with it from the Register page.
 - **Rate limiting / input validation** (e.g. with `zod`) isn't wired in yet —
   add it before exposing this publicly.
 - **Wearable webhook signature verification** is noted in comments but not
-  implemented — required before trusting WHOOP/Garmin payloads in production.
+  implemented — required before trusting WHOOP/Garmin payloads in production.  
