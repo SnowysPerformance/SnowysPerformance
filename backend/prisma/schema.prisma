@@ -18,11 +18,6 @@ enum WearableSource {
   GARMIN
 }
 
-// FULL = can see and edit every athlete on the team (the default — every
-// coach had this before co-coach permissions existed). RESTRICTED = can
-// still SEE every athlete's plans/progress, but can only create, change or
-// delete a workout/test/profile/plan-assignment for an athlete they've
-// been explicitly granted (see CoachAthleteAccess).
 enum CoachAccessLevel {
   FULL
   RESTRICTED
@@ -259,4 +254,35 @@ model Invite {
   athleteAccessIds Json?
   token       String    @unique
   invitedById String
-  invitedBy   User      @relation(fields:
+  invitedBy   User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+  usedAt      DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@index([teamId])
+}
+
+model CoachAthleteAccess {
+  id        String   @id @default(uuid())
+  coachId   String
+  coach     User     @relation("CoachAccessCoach", fields: [coachId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   User     @relation("CoachAccessAthlete", fields: [athleteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([coachId, athleteId])
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   User     @relation("MessageThreadAthlete", fields: [athleteId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([teamId, athleteId])
+}
