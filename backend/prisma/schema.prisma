@@ -18,6 +18,16 @@ enum WearableSource {
   GARMIN
 }
 
+// FULL = can see and edit every athlete on the team (the default — every
+// coach had this before co-coach permissions existed). RESTRICTED = can
+// still SEE every athlete's plans/progress, but can only create, change or
+// delete a workout/test/profile/plan-assignment for an athlete they've
+// been explicitly granted (see CoachAthleteAccess).
+enum CoachAccessLevel {
+  FULL
+  RESTRICTED
+}
+
 model Team {
   id        String   @id @default(uuid())
   name      String
@@ -27,6 +37,8 @@ model Team {
   programs Program[]
   exerciseLibrary ExerciseLibraryItem[]
   testTypeLibrary TestTypeLibraryItem[]
+  invites  Invite[]
+  messages Message[]
 }
 
 model User {
@@ -39,12 +51,27 @@ model User {
   team         Team     @relation(fields: [teamId], references: [id])
   createdAt    DateTime @default(now())
 
+  accessLevel  CoachAccessLevel @default(FULL)
+  isHeadCoach  Boolean          @default(false)
+  isPlatformAdmin Boolean       @default(false)
+  suspended    Boolean          @default(false)
+
+  injuryHistory String? @db.Text
+  needsAnalysis String? @db.Text
+  archetype     String? @db.Text
+  generalNotes  String? @db.Text
+
   workoutLogs         WorkoutLog[]
   testResults         TestResult[]
   wearableData        WearableData[]
   wearableAccountLinks WearableAccountLink[]
   createdPrograms     Program[]            @relation("ProgramCreator")
   programAssignments  ProgramAssignment[]
+  sentInvites         Invite[]
+  athleteAccessGrants CoachAthleteAccess[] @relation("CoachAccessCoach")
+  grantedToCoaches    CoachAthleteAccess[] @relation("CoachAccessAthlete")
+  athleteMessages     Message[]            @relation("MessageThreadAthlete")
+  sentMessages        Message[]            @relation("MessageSender")
 }
 
 model Program {
@@ -108,6 +135,7 @@ model ProgramExercise {
   reps         Int?
   percentOfMax Float?
   weight       Float?
+  goalBarSpeed Float?
   methodName   String?
   band         String?
   distance     String?
@@ -116,6 +144,7 @@ model ProgramExercise {
   restSeconds  String?
   isWarmup     Boolean  @default(false)
   isTest       Boolean  @default(false)
+  testUnit     String?
   groupId      String?
   groupLabel   String?
   order        Int      @default(0)
@@ -172,9 +201,6 @@ model WearableData {
   createdAt  DateTime       @default(now())
 }
 
-// Maps a provider's external user id to one of our athletes, once they
-// complete that provider's OAuth flow. Webhooks arrive keyed by the
-// provider's user id, so this table is what lets us attribute that event.
 model WearableAccountLink {
   id             String         @id @default(uuid())
   athleteId      String
@@ -188,10 +214,6 @@ model WearableAccountLink {
   @@unique([source, externalUserId])
 }
 
-// Which athlete(s) a program has been assigned to. An athlete only ever
-// sees programs that show up here for them — this is what keeps an
-// athlete's view scoped to "my prescribed plan" instead of the whole
-// team's program library.
 model ProgramAssignment {
   id        String   @id @default(uuid())
   programId String
@@ -203,9 +225,6 @@ model ProgramAssignment {
   @@unique([programId, athleteId])
 }
 
-// A team-wide shared exercise library, so an exercise name typed once by
-// anyone on the team autocompletes everywhere else, and coaches can attach
-// easier (regression) or harder (progression) variations to it.
 model ExerciseLibraryItem {
   id           String   @id @default(uuid())
   teamId       String
@@ -218,11 +237,6 @@ model ExerciseLibraryItem {
   @@unique([teamId, name])
 }
 
-// A team-wide library of test types, seeded by the built-in quick-entry
-// presets (Vertical Jump, WHOOP Recovery, etc.) on the frontend and grown
-// whenever a coach or athlete logs a "Custom…" test type — after that, it's
-// a normal dropdown option for the rest of the team, not something anyone
-// has to retype from scratch.
 model TestTypeLibraryItem {
   id        String   @id @default(uuid())
   teamId    String
@@ -233,3 +247,16 @@ model TestTypeLibraryItem {
 
   @@unique([teamId, name])
 }
+
+model Invite {
+  id          String    @id @default(uuid())
+  teamId      String?
+  team        Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  email       String
+  role        Role      @default(ATHLETE)
+  newTeam     Boolean   @default(false)
+  accessLevel      CoachAccessLevel @default(FULL)
+  athleteAccessIds Json?
+  token       String    @unique
+  invitedById String
+  invitedBy   User      @relation(fields:
