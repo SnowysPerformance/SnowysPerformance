@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { app } from "./app";
 import { prisma } from "./db";
+import { computeBestsFromLogs } from "./utils/prs";
 
 const PORT = process.env.PORT || 4000;
 
@@ -22,18 +23,55 @@ async function ensurePlatformAdmin() {
   try {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      console.log("Platform admin email is " + email + ", but no account with that email exists yet — log in with that account first, then restart.");
+      console.log(`Platform admin email is ${email}, but no account with that email exists yet — log in with that account first, then restart.`);
       return;
     }
     if (!user.isPlatformAdmin) {
       await prisma.user.update({ where: { id: user.id }, data: { isPlatformAdmin: true } });
-      console.log("Granted platform admin access to " + email + ".");
+      console.log(`Granted platform admin access to ${email}.`);
     }
   } catch (err) {
     console.error("Admin bootstrap check failed:", err);
   }
 }
 
-ensurePlatformAdmin().finally(() => {
-  app.listen(PORT, () => console.log("API listening on http://localhost:" + PORT));
+// One-time-per-database backfill: the PersonalRecord table is brand new, so
+// every weighted set anyone logged before this feature shipped needs its
+// "current all-time best" computed once from history. After that, every new
+// log or delete keeps the table current on its own (see workouts.controller
+// .ts), so this only ever does real work the first time it runs against a
+// given database — it's a no-op on every boot after that.
+async function backfillPersonalRecords() {
+  try {
+    const alreadyPopulated = await prisma.personalRecord.count();
+    if (alreadyPopulated > 0) return;
+
+    const pairs = await prisma.workoutLog.groupBy({
+      by: ["teamId", "athleteId", "exerciseName"],
+      where: { type: "weighted", isWarmup: false },
+    });
+    if (!pairs.length) return;
+
+    console.log(`Backfilling personal records for ${pairs.length} athlete/exercise pair(s)...`);
+    for (const p of pairs) {
+      const logs = await prisma.workoutLog.findMany({
+        where: { athleteId: p.athleteId, exerciseName: p.exerciseName, type: "weighted", isWarmup: false },
+        select: { id: true, date: true, sets: true },
+      });
+      const bests = computeBestsFromLogs(logs);
+      if (bests.bestWeight <= 0 && bests.bestE1rm <= 0) continue;
+      await prisma.personalRecord.upsert({
+        where: { athleteId_exerciseName: { athleteId: p.athleteId, exerciseName: p.exerciseName } },
+        create: { teamId: p.teamId, athleteId: p.athleteId, exerciseName: p.exerciseName, ...bests },
+        update: bests,
+      });
+    }
+    console.log("Personal records backfill complete.");
+  } catch (err) {
+    console.error("Personal records backfill failed:", err);
+  }
+}
+
+Promise.all([ensurePlatformAdmin(), backfillPersonalRecords()]).finally(() => {
+  app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
 });
