@@ -1,13 +1,25 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { TEST_PRESETS } from "@/lib/testPresets";
+import { computePRs } from "@/lib/prs";
 
 type SetRow = { weight: string; reps: string; duration: string };
 
+// useSearchParams() requires a <Suspense> boundary around it (Next.js
+// build-time requirement), so the default export just supplies that and the
+// real page lives in WorkoutsPageInner.
 export default function WorkoutsPage() {
+  return (
+    <Suspense fallback={<p className="text-faint text-sm">Loading…</p>}>
+      <WorkoutsPageInner />
+    </Suspense>
+  );
+}
+
+function WorkoutsPageInner() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const [athletes, setAthletes] = useState<any[]>([]);
@@ -46,6 +58,12 @@ export default function WorkoutsPage() {
   const [libraryLoaded, setLibraryLoaded] = useState(false);
   const [appliedTestPrefill, setAppliedTestPrefill] = useState(false);
 
+  // Every exercise's current all-time best, kept by the backend — shown
+  // next to the exercise as it's picked, and used to flag a save as a new
+  // PR the instant it comes back, not just once History re-renders.
+  const [bests, setBests] = useState<any[]>([]);
+  const [prBanner, setPrBanner] = useState("");
+
   const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none w-full";
   const tinyCheck = "flex items-center gap-1.5 text-xs text-faint whitespace-nowrap";
 
@@ -65,7 +83,13 @@ export default function WorkoutsPage() {
   useEffect(() => {
     const prefillExercise = searchParams.get("exercise");
     const prefillIsTest = searchParams.get("isTest") === "1";
-    if (prefillExercise && !prefillIsTest) setExerciseName(prefillExercise);
+    if (prefillExercise && !prefillIsTest) {
+      setExerciseName(prefillExercise);
+      const prefillMethod = searchParams.get("method");
+      const prefillRest = searchParams.get("rest");
+      if (prefillMethod) setMethodName(prefillMethod);
+      if (prefillRest) setRestSeconds(prefillRest);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -96,6 +120,14 @@ export default function WorkoutsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // A coach with no athlete picked yet has nobody's bests to show; an
+  // athlete always has their own.
+  useEffect(() => {
+    if (user?.role === "ATHLETE" || athleteId) loadBests();
+    else setBests([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athleteId, user]);
+
   async function loadLogs() {
     const data = await api("/api/workouts" + (athleteId ? `?athleteId=${athleteId}` : ""));
     setLogs(data);
@@ -106,6 +138,9 @@ export default function WorkoutsPage() {
   }
   async function loadTestTypeLibrary() {
     setTestTypeLibrary(await api("/api/test-types"));
+  }
+  async function loadBests() {
+    setBests(await api("/api/workouts/bests" + (athleteId ? `?athleteId=${athleteId}` : "")));
   }
 
   const isCustomTest = testOptionKey === "custom";
@@ -159,13 +194,14 @@ export default function WorkoutsPage() {
     else cleanSets = sets.filter((s) => Number(s.duration) > 0).map((s) => ({ duration: Number(s.duration) }));
     if (!exerciseName.trim() || cleanSets.length === 0) return;
 
-    await api("/api/workouts", {
+    const savedExerciseName = exerciseName.trim();
+    const saved = await api("/api/workouts", {
       method: "POST",
       body: JSON.stringify({
         athleteId: athleteId || undefined,
         date,
         label: label.trim() || undefined,
-        exerciseName: exerciseName.trim(),
+        exerciseName: savedExerciseName,
         type,
         methodName: methodName.trim() || undefined,
         band: type === "banded" ? band.trim() : undefined,
@@ -180,6 +216,18 @@ export default function WorkoutsPage() {
     });
     resetWorkoutForm();
     loadLogs();
+    // Nobody's bests to reload if a coach hasn't picked an athlete yet (they
+    // just logged it under their own account instead — see targetAthleteId
+    // in createWorkoutLog).
+    const canLoadBests = isAthlete || !!athleteId;
+    if (saved.isWeightPR || saved.isE1rmPR) {
+      const weightBit = saved.isWeightPR ? `${Math.round(saved.bestWeight)} lb` : "";
+      setPrBanner(`New PR on ${savedExerciseName}!${weightBit ? ` ${weightBit}` : ""}`);
+      if (canLoadBests) loadBests();
+      setTimeout(() => setPrBanner(""), 5000);
+    } else if (saved.bestWeight !== undefined && canLoadBests) {
+      loadBests();
+    }
   }
 
   async function submitTest(e: React.FormEvent) {
@@ -205,11 +253,26 @@ export default function WorkoutsPage() {
   }
 
   const isTimeBased = type === "timed" || type === "sprint";
+  const { prMap } = useMemo(() => computePRs(logs), [logs]);
+  const currentBest = useMemo(
+    () => bests.find((b) => b.exerciseName.toLowerCase() === exerciseName.trim().toLowerCase()),
+    [bests, exerciseName]
+  );
+  // Athletes log their performance (sets/reps/weight/duration) against
+  // whatever the coach prescribed — they don't get to change what
+  // exercise, method, or rest was prescribed, or invent a session label.
+  // Those come in prefilled from "Log this" on the plan; if nothing came
+  // through, there's simply nothing to log against yet.
+  const isAthlete = user?.role === "ATHLETE";
 
   async function deleteLog(id: string) {
     if (!confirm("Delete this logged workout? This can't be undone.")) return;
     await api(`/api/workouts/${id}`, { method: "DELETE" });
     loadLogs();
+    // Deleting a log can change (or clear) that exercise's recorded best —
+    // but there's nobody's bests to reload if a coach hasn't picked an
+    // athlete yet (the bests endpoint requires one for a coach).
+    if (isAthlete || athleteId) loadBests();
   }
   async function deleteTestResult(id: string) {
     if (!confirm("Delete this test result? This can't be undone.")) return;
@@ -225,6 +288,10 @@ export default function WorkoutsPage() {
     <div className="space-y-8">
       <div>
         <h1 className="font-display text-xl font-semibold mb-4">Log a Workout or Test</h1>
+
+        {prBanner && (
+          <p className="bg-chalk text-accenttext font-semibold text-sm rounded px-3 py-2 mb-3 max-w-2xl">{prBanner}</p>
+        )}
 
         {user?.role === "COACH" && (
           <select className={inputClass + " max-w-2xl mb-3"} value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
@@ -248,11 +315,19 @@ export default function WorkoutsPage() {
           <form onSubmit={submitWorkout} className="bg-surface border border-edge rounded-lg p-4 max-w-2xl space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <input type="date" className={inputClass} value={date} onChange={(e) => setDate(e.target.value)} />
-              <input className={inputClass} placeholder="Session label (optional, e.g. AM Lift)" value={label} onChange={(e) => setLabel(e.target.value)} />
+              {!isAthlete && (
+                <input className={inputClass} placeholder="Session label (optional, e.g. AM Lift)" value={label} onChange={(e) => setLabel(e.target.value)} />
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <input className={inputClass} placeholder="Exercise name" value={exerciseName} onChange={(e) => setExerciseName(e.target.value)} />
+              {isAthlete ? (
+                <div className={inputClass + " bg-raised cursor-not-allowed"}>
+                  {exerciseName || <span className="text-faint">Use "Log this" on your plan to pick an exercise</span>}
+                </div>
+              ) : (
+                <input className={inputClass} placeholder="Exercise name" value={exerciseName} onChange={(e) => setExerciseName(e.target.value)} />
+              )}
               <select className={inputClass} value={type} onChange={(e) => setType(e.target.value)}>
                 <option value="weighted">Weighted</option>
                 <option value="bodyweight">Bodyweight</option>
@@ -261,9 +336,18 @@ export default function WorkoutsPage() {
                 <option value="timed">Timed</option>
               </select>
             </div>
+            {type === "weighted" && currentBest && (
+              <p className="text-xs text-faint -mt-1">
+                Current best on {exerciseName.trim()}: <span className="text-chalk font-mono">{Math.round(currentBest.bestWeight)} lb</span>
+              </p>
+            )}
 
             <div className="flex flex-wrap gap-3 items-center">
-              <input className={inputClass} style={{ maxWidth: 220 }} placeholder="Training method (optional)" value={methodName} onChange={(e) => setMethodName(e.target.value)} />
+              {isAthlete ? (
+                methodName && <span className="text-xs text-faint">Method: <span className="text-muted">{methodName}</span></span>
+              ) : (
+                <input className={inputClass} style={{ maxWidth: 220 }} placeholder="Training method (optional)" value={methodName} onChange={(e) => setMethodName(e.target.value)} />
+              )}
               {type === "banded" && <input className={inputClass} style={{ maxWidth: 160 }} placeholder="Band (e.g. Green)" value={band} onChange={(e) => setBand(e.target.value)} />}
               {type === "sprint" && (
                 <>
@@ -272,7 +356,11 @@ export default function WorkoutsPage() {
                   {resisted && <input className={inputClass} style={{ maxWidth: 180 }} placeholder="Resistance (e.g. 20lb sled)" value={resistance} onChange={(e) => setResistance(e.target.value)} />}
                 </>
               )}
-              <input className={inputClass} style={{ maxWidth: 130 }} placeholder="Rest (sec)" value={restSeconds} onChange={(e) => setRestSeconds(e.target.value)} />
+              {isAthlete ? (
+                restSeconds && <span className="text-xs text-faint">Rest: <span className="text-muted">{restSeconds}s</span></span>
+              ) : (
+                <input className={inputClass} style={{ maxWidth: 130 }} placeholder="Rest (sec)" value={restSeconds} onChange={(e) => setRestSeconds(e.target.value)} />
+              )}
               <label className={tinyCheck}><input type="checkbox" checked={isWarmup} onChange={(e) => setIsWarmup(e.target.checked)} /> Warm-up</label>
             </div>
 
@@ -300,7 +388,12 @@ export default function WorkoutsPage() {
               <button type="button" onClick={addSet} className="text-xs text-accent underline">+ Add set</button>
             </div>
 
-            <button className="bg-accent text-accenttext font-semibold rounded px-4 py-2 hover:bg-accentstrong transition-colors">Save session</button>
+            <button
+              className="bg-accent text-accenttext font-semibold rounded px-4 py-2 hover:bg-accentstrong transition-colors disabled:opacity-40"
+              disabled={isAthlete && !exerciseName.trim()}
+            >
+              Save session
+            </button>
           </form>
         )}
 
@@ -377,6 +470,9 @@ export default function WorkoutsPage() {
                     {l.label ? ` — ${l.label}` : ""} — <span className="font-medium">{l.exerciseName}</span>
                     {l.isWarmup && <span className="ml-2 text-xs bg-raised text-faint rounded px-1.5 py-0.5">Warm-up</span>}
                     {l.isTest && <span className="ml-2 text-xs bg-raised text-accent rounded px-1.5 py-0.5">Test</span>}
+                    {prMap[l.id]?.weightPR && (
+                      <span className="ml-2 text-xs bg-chalk text-accenttext font-bold rounded px-1.5 py-0.5 tracking-wide">PR</span>
+                    )}
                   </span>
                   <span className="flex items-center gap-3 flex-shrink-0">
                     <span className="font-mono text-chalk text-xs">{summary}</span>
