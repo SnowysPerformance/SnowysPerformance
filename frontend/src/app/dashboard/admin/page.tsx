@@ -88,21 +88,25 @@ export default function AdminPage() {
     }
   }
 
-  async function deleteTeam(team: any) {
-    if (!team.headCoach) return;
-    const confirmed = confirm(
-      `Permanently delete "${team.name}"? This removes ${team.headCoach.name}, every assistant coach and athlete on the team, and all of their programs, logs, and messages. This can't be undone.`
-    );
+  // Removing a head coach takes their whole team with it; removing an
+  // assistant coach only removes that one account. The confirmation
+  // wording makes clear which one is about to happen.
+  async function deleteCoach(coach: any, team: any) {
+    const confirmed = coach.isHeadCoach
+      ? confirm(
+          `Permanently delete "${team.name}"? This removes ${coach.name}, every assistant coach and athlete on the team, and all of their programs, logs, and messages. This can't be undone.`
+        )
+      : confirm(`Remove ${coach.name} (${coach.email}) as a coach? The team and everyone else on it are unaffected. This can't be undone.`);
     if (!confirmed) return;
-    setRowError((e) => ({ ...e, [team.headCoach.id]: "" }));
-    setRowBusy((b) => ({ ...b, [team.headCoach.id]: true }));
+    setRowError((e) => ({ ...e, [coach.id]: "" }));
+    setRowBusy((b) => ({ ...b, [coach.id]: true }));
     try {
-      await api(`/api/admin/head-coaches/${team.headCoach.id}`, { method: "DELETE" });
+      await api(`/api/admin/head-coaches/${coach.id}`, { method: "DELETE" });
       await load();
     } catch (err: any) {
-      setRowError((e) => ({ ...e, [team.headCoach.id]: err.message }));
+      setRowError((e) => ({ ...e, [coach.id]: err.message }));
     } finally {
-      setRowBusy((b) => ({ ...b, [team.headCoach.id]: false }));
+      setRowBusy((b) => ({ ...b, [coach.id]: false }));
     }
   }
 
@@ -165,45 +169,47 @@ export default function AdminPage() {
         <ul className="space-y-2">
           {teams.map((t) => (
             <li key={t.id} className="bg-surface border border-edge rounded p-3 text-sm space-y-2">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div>
-                  <div className="font-medium">{t.name}</div>
-                  <div className="text-xs text-faint">
-                    {t.coachCount} coach{t.coachCount === 1 ? "" : "es"} · {t.athleteCount} athlete{t.athleteCount === 1 ? "" : "s"}
-                  </div>
+              <div>
+                <div className="font-medium">{t.name}</div>
+                <div className="text-xs text-faint">
+                  {t.coachCount} coach{t.coachCount === 1 ? "" : "es"} · {t.athleteCount} athlete{t.athleteCount === 1 ? "" : "s"}
                 </div>
-                {t.headCoach && (
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <button
-                      onClick={() => toggleSuspend(t.headCoach, !t.headCoach.suspended)}
-                      disabled={rowBusy[t.headCoach.id]}
-                      className="text-xs border border-edge rounded px-3 py-1.5 text-muted hover:text-primary disabled:opacity-40"
-                    >
-                      {rowBusy[t.headCoach.id] ? "Working…" : t.headCoach.suspended ? "Unsuspend" : "Suspend"}
-                    </button>
-                    <button
-                      onClick={() => deleteTeam(t)}
-                      disabled={rowBusy[t.headCoach.id]}
-                      className="text-xs text-faint hover:text-red-400 disabled:opacity-40"
-                    >
-                      Delete team
-                    </button>
-                  </div>
-                )}
               </div>
               {/* Every coach on the team, head coach included — this is the
                   only place that shows accounts made before invites were
-                  required, since those never went through this page. */}
-              <ul className="pl-3 border-l border-edgesoft space-y-1">
+                  required, since those never went through this page. Every
+                  coach can be suspended or removed here, not just the head
+                  coach — removing the head coach takes the whole team with
+                  it (see deleteCoach), removing anyone else just removes
+                  that one account. */}
+              <ul className="space-y-1.5">
                 {(t.coaches || []).map((c: any) => (
-                  <li key={c.id} className="text-xs text-faint">
-                    {c.name} ({c.email}){c.isHeadCoach ? " · Head Coach" : ""}
-                    {c.suspended && <span className="text-red-400"> · Suspended</span>}
+                  <li key={c.id} className="bg-raised border border-edgesoft rounded p-2 flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs text-faint truncate">
+                      {c.name} ({c.email}){c.isHeadCoach ? " · Head Coach" : ""}
+                      {c.suspended && <span className="text-red-400"> · Suspended</span>}
+                    </span>
+                    <span className="flex items-center gap-3 flex-shrink-0">
+                      <button
+                        onClick={() => toggleSuspend(c, !c.suspended)}
+                        disabled={rowBusy[c.id]}
+                        className="text-xs border border-edge rounded px-3 py-1.5 text-muted hover:text-primary disabled:opacity-40"
+                      >
+                        {rowBusy[c.id] ? "Working…" : c.suspended ? "Unsuspend" : "Suspend"}
+                      </button>
+                      <button
+                        onClick={() => deleteCoach(c, t)}
+                        disabled={rowBusy[c.id]}
+                        className="text-xs text-faint hover:text-red-400 disabled:opacity-40"
+                      >
+                        {c.isHeadCoach ? "Delete team" : "Remove"}
+                      </button>
+                    </span>
+                    {rowError[c.id] && <p className="text-red-400 text-xs w-full">{rowError[c.id]}</p>}
                   </li>
                 ))}
                 {(!t.coaches || t.coaches.length === 0) && <li className="text-xs text-faint">No coaches</li>}
               </ul>
-              {rowError[t.headCoach?.id] && <p className="text-red-400 text-xs">{rowError[t.headCoach.id]}</p>}
             </li>
           ))}
           {teams.length === 0 && <p className="text-faint text-sm">No teams yet.</p>}
