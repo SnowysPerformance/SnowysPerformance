@@ -8,6 +8,7 @@ const coachLinks = [
   { href: "/dashboard/athletes", label: "Athletes" },
   { href: "/dashboard/programs", label: "Programs" },
   { href: "/dashboard/library", label: "Library" },
+  { href: "/dashboard/settings", label: "Settings" },
 ];
 
 const athleteLinks = [
@@ -16,12 +17,15 @@ const athleteLinks = [
   { href: "/dashboard/workouts", label: "Log" },
   { href: "/dashboard/fatigue", label: "Progress" },
   { href: "/dashboard/tests", label: "Testing" },
+  { href: "/dashboard/messages", label: "Messages" },
+  { href: "/dashboard/settings", label: "Settings" },
 ];
 
 export default function NavBar() {
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const links = user?.role === "COACH" ? coachLinks : athleteLinks;
+  const showAdmin = !!user?.isPlatformAdmin;
 
   return (
     <aside className="w-60 bg-surface border-r border-edge text-primary flex flex-col flex-shrink-0">
@@ -52,6 +56,25 @@ export default function NavBar() {
             </Link>
           );
         })}
+        {showAdmin && (
+          <Link
+            key="/dashboard/admin"
+            href="/dashboard/admin"
+            className={
+              "flex items-center gap-2 rounded px-3 py-2 text-[13.5px] font-medium transition-colors border " +
+              (pathname === "/dashboard/admin" || pathname?.startsWith("/dashboard/admin")
+                ? "bg-accentsoft border-accent/40 text-primary"
+                : "border-transparent text-chalk hover:bg-raised hover:text-primary")
+            }
+            style={
+              pathname === "/dashboard/admin" || pathname?.startsWith("/dashboard/admin")
+                ? { background: "rgba(126,200,227,0.14)", borderColor: "rgba(126,200,227,0.4)" }
+                : undefined
+            }
+          >
+            Admin
+          </Link>
+        )}
       </nav>
       <div className="p-3 border-t border-edgesoft">
         <div className="flex items-center gap-2 mb-2">
