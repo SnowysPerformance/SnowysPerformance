@@ -143,15 +143,18 @@ export async function deleteHeadCoach(req: Request, res: Response) {
     if (!target.isHeadCoach) {
       // Program.createdById is required and has no cascade, so a program
       // this coach built would otherwise block deleting their account.
-      // Hand those programs to the team's head coach instead of deleting
-      // them — an assistant coach leaving shouldn't take their work with
-      // them.
-      const headCoach = await prisma.user.findFirst({
-        where: { teamId: target.teamId, role: "COACH", isHeadCoach: true },
+      // Hand those programs to another coach on the team instead of
+      // deleting them — prefer the head coach, but don't depend on one
+      // being correctly flagged (older, pre-invite teams sometimes
+      // aren't); fall back to whichever other coach is on the team, and
+      // if truly none is left, to the admin doing the removal, so this
+      // never fails on account of who happens to own the programs.
+      const anotherCoach = await prisma.user.findFirst({
+        where: { teamId: target.teamId, role: "COACH", id: { not: target.id } },
+        orderBy: { isHeadCoach: "desc" },
       });
-      if (headCoach) {
-        await prisma.program.updateMany({ where: { createdById: target.id }, data: { createdById: headCoach.id } });
-      }
+      const newOwnerId = anotherCoach?.id || req.user!.userId;
+      await prisma.program.updateMany({ where: { createdById: target.id }, data: { createdById: newOwnerId } });
       await prisma.user.delete({ where: { id: target.id } });
       return res.status(204).send();
     }
