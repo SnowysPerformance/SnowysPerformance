@@ -169,9 +169,7 @@ export default function AdminPage() {
                 <div>
                   <div className="font-medium">{t.name}</div>
                   <div className="text-xs text-faint">
-                    {t.headCoach ? `${t.headCoach.name} (${t.headCoach.email})` : "No head coach"} ·{" "}
                     {t.coachCount} coach{t.coachCount === 1 ? "" : "es"} · {t.athleteCount} athlete{t.athleteCount === 1 ? "" : "s"}
-                    {t.headCoach?.suspended && <span className="text-red-400"> · Suspended</span>}
                   </div>
                 </div>
                 {t.headCoach && (
@@ -193,6 +191,18 @@ export default function AdminPage() {
                   </div>
                 )}
               </div>
+              {/* Every coach on the team, head coach included — this is the
+                  only place that shows accounts made before invites were
+                  required, since those never went through this page. */}
+              <ul className="pl-3 border-l border-edgesoft space-y-1">
+                {(t.coaches || []).map((c: any) => (
+                  <li key={c.id} className="text-xs text-faint">
+                    {c.name} ({c.email}){c.isHeadCoach ? " · Head Coach" : ""}
+                    {c.suspended && <span className="text-red-400"> · Suspended</span>}
+                  </li>
+                ))}
+                {(!t.coaches || t.coaches.length === 0) && <li className="text-xs text-faint">No coaches</li>}
+              </ul>
               {rowError[t.headCoach?.id] && <p className="text-red-400 text-xs">{rowError[t.headCoach.id]}</p>}
             </li>
           ))}
