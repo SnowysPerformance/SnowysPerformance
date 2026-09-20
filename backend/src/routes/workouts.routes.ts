@@ -6,6 +6,7 @@ const router = Router();
 router.use(authenticate);
 router.post("/", ctrl.createWorkoutLog);
 router.get("/", ctrl.listWorkoutLogs);
+router.get("/bests", ctrl.getPersonalBests);
 router.delete("/:id", ctrl.deleteWorkoutLog);
 
 export default router;
