@@ -33,13 +33,20 @@ export async function listTeams(req: Request, res: Response) {
   });
   res.json(
     teams.map((t) => {
-      const headCoach = t.users.find((u) => u.role === "COACH" && u.isHeadCoach) || null;
+      const coaches = t.users.filter((u) => u.role === "COACH");
+      const headCoach = coaches.find((u) => u.isHeadCoach) || null;
       return {
         id: t.id,
         name: t.name,
         createdAt: t.createdAt,
         headCoach,
-        coachCount: t.users.filter((u) => u.role === "COACH").length,
+        // Every coach on this team, head coach included — so an account
+        // created back before invites were mandatory (self-registered, or
+        // added directly by a head coach) still shows up here. Only the
+        // head coach can be suspended/removed from this page; the rest are
+        // listed for visibility only.
+        coaches,
+        coachCount: coaches.length,
         athleteCount: t.users.filter((u) => u.role === "ATHLETE").length,
       };
     })
