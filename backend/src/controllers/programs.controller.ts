@@ -173,6 +173,7 @@ export async function duplicateWeek(req: Request, res: Response) {
               percentOfMax: ex.percentOfMax, weight: ex.weight, methodName: ex.methodName, band: ex.band,
               distance: ex.distance, resisted: ex.resisted, resistance: ex.resistance, restSeconds: ex.restSeconds,
               isWarmup: ex.isWarmup, isTest: ex.isTest, groupId: ex.groupId, groupLabel: ex.groupLabel, order: ex.order,
+              notes: ex.notes,
             })),
           },
         })),
@@ -205,6 +206,7 @@ export async function addExercise(req: Request, res: Response) {
   if (!day) return res.status(404).json({ error: "Not found" });
 
   const b = req.body;
+  const siblingCount = await prisma.programExercise.count({ where: { dayId: day.id } });
   const exercise = await prisma.programExercise.create({
     data: {
       dayId: day.id,
@@ -224,6 +226,7 @@ export async function addExercise(req: Request, res: Response) {
       isWarmup: !!b.isWarmup,
       isTest: !!b.isTest,
       notes: b.notes || null,
+      order: siblingCount,
     },
   });
   res.status(201).json(exercise);
@@ -258,6 +261,8 @@ export async function updateExercise(req: Request, res: Response) {
       isTest: b.isTest !== undefined ? !!b.isTest : existing.isTest,
       groupId: b.groupId !== undefined ? b.groupId : existing.groupId,
       groupLabel: b.groupLabel !== undefined ? b.groupLabel : existing.groupLabel,
+      notes: b.notes !== undefined ? b.notes : existing.notes,
+      order: b.order !== undefined ? Number(b.order) : existing.order,
     },
   });
   res.json(updated);
@@ -272,6 +277,25 @@ export async function deleteExercise(req: Request, res: Response) {
   if (!existing || existing.day.week.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
   await prisma.programExercise.delete({ where: { id: existing.id } });
   res.status(204).send();
+}
+
+// reorder every exercise in a day in one shot — used by drag-and-drop reordering
+export async function reorderExercises(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const day = await verifyDayOwnership(req.params.dayId, req.user!.teamId);
+  if (!day) return res.status(404).json({ error: "Not found" });
+  const { order } = req.body as { order: string[] };
+  if (!Array.isArray(order)) return res.status(400).json({ error: "order must be an array of exercise ids" });
+
+  await prisma.$transaction(
+    order.map((exerciseId, index) =>
+      prisma.programExercise.updateMany({
+        where: { id: exerciseId, dayId: day.id },
+        data: { order: index },
+      })
+    )
+  );
+  res.status(200).json({ ok: true });
 }
 
 // group / ungroup a set of exercises within the same day into a labeled superset
