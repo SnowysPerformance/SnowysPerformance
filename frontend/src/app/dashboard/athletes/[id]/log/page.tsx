@@ -41,6 +41,14 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
   const [testCustomUnit, setTestCustomUnit] = useState("");
   const [testAttempts, setTestAttempts] = useState<string[]>([""]);
   const [testResults, setTestResults] = useState<any[]>([]);
+  const [canEdit, setCanEdit] = useState(true);
+  const [formError, setFormError] = useState("");
+
+  // Every exercise's current all-time best, kept by the backend — used to
+  // show "current best: ___" while logging, and to flag a save as a new PR
+  // the instant it comes back, not just once the History list re-renders.
+  const [bests, setBests] = useState<any[]>([]);
+  const [prBanner, setPrBanner] = useState("");
 
   async function loadLogs() {
     setLogs(await api(`/api/workouts?athleteId=${athleteId}`));
@@ -51,13 +59,23 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
   async function loadTestTypeLibrary() {
     setTestTypeLibrary(await api("/api/test-types"));
   }
+  async function loadBests() {
+    setBests(await api(`/api/workouts/bests?athleteId=${athleteId}`));
+  }
   useEffect(() => {
     loadLogs();
     loadTestResults();
     loadTestTypeLibrary();
+    loadBests();
     api("/api/library").then(setLibraryItems).catch(console.error);
+    api(`/api/teams/me/athletes/${athleteId}`).then((a) => setCanEdit(a.canEdit !== false)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
+
+  const currentBest = useMemo(
+    () => bests.find((b) => b.exerciseName.toLowerCase() === exerciseName.trim().toLowerCase()),
+    [bests, exerciseName]
+  );
 
   const testOptions = useMemo(() => {
     const presetLabels = new Set(TEST_PRESETS.map((p) => p.label));
@@ -118,21 +136,35 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
     else cleanSets = sets.filter((s) => Number(s.duration) > 0).map((s) => ({ duration: Number(s.duration) }));
     if (!exerciseName.trim() || cleanSets.length === 0) return;
 
-    await api("/api/workouts", {
-      method: "POST",
-      body: JSON.stringify({
-        athleteId, date, label: label.trim() || undefined, exerciseName: exerciseName.trim(), type,
-        methodName: methodName.trim() || undefined,
-        band: type === "banded" ? band.trim() : undefined,
-        distance: type === "sprint" ? distance.trim() : undefined,
-        resisted: type === "sprint" ? resisted : undefined,
-        resistance: type === "sprint" && resisted ? resistance.trim() : undefined,
-        restSeconds: restSeconds.trim() || undefined,
-        isWarmup, isTest: false, sets: cleanSets,
-      }),
-    });
-    resetWorkoutForm();
-    loadLogs();
+    setFormError("");
+    try {
+      const savedExerciseName = exerciseName.trim();
+      const saved = await api("/api/workouts", {
+        method: "POST",
+        body: JSON.stringify({
+          athleteId, date, label: label.trim() || undefined, exerciseName: savedExerciseName, type,
+          methodName: methodName.trim() || undefined,
+          band: type === "banded" ? band.trim() : undefined,
+          distance: type === "sprint" ? distance.trim() : undefined,
+          resisted: type === "sprint" ? resisted : undefined,
+          resistance: type === "sprint" && resisted ? resistance.trim() : undefined,
+          restSeconds: restSeconds.trim() || undefined,
+          isWarmup, isTest: false, sets: cleanSets,
+        }),
+      });
+      resetWorkoutForm();
+      loadLogs();
+      if (saved.isWeightPR || saved.isE1rmPR) {
+        const weightBit = saved.isWeightPR ? `${Math.round(saved.bestWeight)} lb` : "";
+        setPrBanner(`New PR on ${savedExerciseName}!${weightBit ? ` ${weightBit}` : ""}`);
+        loadBests();
+        setTimeout(() => setPrBanner(""), 5000);
+      } else if (saved.bestWeight !== undefined) {
+        loadBests();
+      }
+    } catch (err: any) {
+      setFormError(err.message);
+    }
   }
 
   async function submitTest(e: React.FormEvent) {
@@ -141,22 +173,27 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
     const validAttempts = testAttempts.map((a) => a.trim()).filter((a) => a !== "" && !Number.isNaN(Number(a)));
     if (validAttempts.length === 0) return;
 
-    if (isCustomTest) {
-      // Save it to the team's test type library so it's a normal dropdown
-      // option everywhere (Log tab and Testing tab) from now on.
-      await api("/api/test-types", { method: "POST", body: JSON.stringify({ name: activeTestLabel, unit: activeTestUnit }) });
-    }
+    setFormError("");
+    try {
+      if (isCustomTest) {
+        // Save it to the team's test type library so it's a normal dropdown
+        // option everywhere (Log tab and Testing tab) from now on.
+        await api("/api/test-types", { method: "POST", body: JSON.stringify({ name: activeTestLabel, unit: activeTestUnit }) });
+      }
 
-    for (const value of validAttempts) {
-      await api("/api/tests", {
-        method: "POST",
-        body: JSON.stringify({ athleteId, testType: activeTestLabel, unit: activeTestUnit, date, value: Number(value) }),
-      });
-    }
+      for (const value of validAttempts) {
+        await api("/api/tests", {
+          method: "POST",
+          body: JSON.stringify({ athleteId, testType: activeTestLabel, unit: activeTestUnit, date, value: Number(value) }),
+        });
+      }
 
-    resetTestForm();
-    loadTestResults();
-    if (isCustomTest) loadTestTypeLibrary();
+      resetTestForm();
+      loadTestResults();
+      if (isCustomTest) loadTestTypeLibrary();
+    } catch (err: any) {
+      setFormError(err.message);
+    }
   }
 
   const isTimeBased = type === "timed" || type === "sprint";
@@ -164,13 +201,23 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
 
   async function deleteLog(id: string) {
     if (!confirm("Delete this logged workout? This can't be undone.")) return;
-    await api(`/api/workouts/${id}`, { method: "DELETE" });
-    loadLogs();
+    try {
+      await api(`/api/workouts/${id}`, { method: "DELETE" });
+      loadLogs();
+      // Deleting a log can change (or clear) that exercise's recorded best.
+      loadBests();
+    } catch (err: any) {
+      setFormError(err.message);
+    }
   }
   async function deleteTestResult(id: string) {
     if (!confirm("Delete this test result? This can't be undone.")) return;
-    await api(`/api/tests/${id}`, { method: "DELETE" });
-    loadTestResults();
+    try {
+      await api(`/api/tests/${id}`, { method: "DELETE" });
+      loadTestResults();
+    } catch (err: any) {
+      setFormError(err.message);
+    }
   }
 
   const tabBtn = (active: boolean) =>
@@ -179,6 +226,17 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
 
   return (
     <div className="space-y-8">
+      {!canEdit && (
+        <p className="text-xs text-amber-400">
+          You have view-only access to this athlete — you can see their history below, but logging or deleting needs edit permission.
+        </p>
+      )}
+      {formError && <p className="text-red-400 text-sm">{formError}</p>}
+      {prBanner && (
+        <p className="bg-chalk text-accenttext font-semibold text-sm rounded px-3 py-2 max-w-2xl">{prBanner}</p>
+      )}
+
+      {canEdit && (
       <div className="flex gap-2">
         <button type="button" onClick={() => setEntryKind("workout")} className={tabBtn(entryKind === "workout")}>
           Log a Workout
@@ -187,8 +245,9 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
           Log a Test
         </button>
       </div>
+      )}
 
-      {entryKind === "workout" && (
+      {canEdit && entryKind === "workout" && (
         <form onSubmit={submitWorkout} className="bg-surface border border-edge rounded-lg p-4 max-w-2xl space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <input type="date" className={inputClass} value={date} onChange={(e) => setDate(e.target.value)} />
@@ -216,6 +275,11 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
               <option value="timed">Timed</option>
             </select>
           </div>
+          {type === "weighted" && currentBest && (
+            <p className="text-xs text-faint -mt-1">
+              Current best on {exerciseName.trim()}: <span className="text-chalk font-mono">{Math.round(currentBest.bestWeight)} lb</span>
+            </p>
+          )}
           <div className="flex flex-wrap gap-3 items-center">
             <input className={inputClass} style={{ maxWidth: 220 }} placeholder="Training method" value={methodName} onChange={(e) => setMethodName(e.target.value)} />
             {type === "banded" && <input className={inputClass} style={{ maxWidth: 160 }} placeholder="Band" value={band} onChange={(e) => setBand(e.target.value)} />}
@@ -253,7 +317,7 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
         </form>
       )}
 
-      {entryKind === "test" && (
+      {canEdit && entryKind === "test" && (
         <form onSubmit={submitTest} className="bg-surface border border-edge rounded-lg p-4 max-w-2xl space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <input type="date" className={inputClass} value={date} onChange={(e) => setDate(e.target.value)} />
@@ -330,9 +394,11 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
                 </span>
                 <span className="flex items-center gap-3 flex-shrink-0">
                   <span className="font-mono text-chalk text-xs">{summary}</span>
-                  <button type="button" onClick={() => deleteLog(l.id)} className="text-faint hover:text-red-400 text-xs" title="Delete this logged workout">
-                    ✕
-                  </button>
+                  {canEdit && (
+                    <button type="button" onClick={() => deleteLog(l.id)} className="text-faint hover:text-red-400 text-xs" title="Delete this logged workout">
+                      ✕
+                    </button>
+                  )}
                 </span>
               </li>
             );
@@ -351,9 +417,11 @@ export default function AthleteLogTab({ params }: { params: { id: string } }) {
               </span>
               <span className="flex items-center gap-3 flex-shrink-0">
                 <span className="font-mono text-chalk text-xs">{t.value}{t.unit ? ` ${t.unit}` : ""}</span>
-                <button type="button" onClick={() => deleteTestResult(t.id)} className="text-faint hover:text-red-400 text-xs" title="Delete this test result">
-                  ✕
-                </button>
+                {canEdit && (
+                  <button type="button" onClick={() => deleteTestResult(t.id)} className="text-faint hover:text-red-400 text-xs" title="Delete this test result">
+                    ✕
+                  </button>
+                )}
               </span>
             </li>
           ))}
