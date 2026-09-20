@@ -135,24 +135,44 @@ export async function deleteHeadCoach(req: Request, res: Response) {
   }
   if (target.isPlatformAdmin) return res.status(400).json({ error: "Can't delete the platform admin's own account." });
 
-  if (!target.isHeadCoach) {
-    await prisma.user.delete({ where: { id: target.id } });
-    return res.status(204).send();
-  }
+  // Wrapped in try/catch on purpose: this does several dependent writes in
+  // a row, and an unhandled failure partway through would otherwise crash
+  // the whole server for every user currently connected, not just fail
+  // this one request.
+  try {
+    if (!target.isHeadCoach) {
+      // Program.createdById is required and has no cascade, so a program
+      // this coach built would otherwise block deleting their account.
+      // Hand those programs to the team's head coach instead of deleting
+      // them — an assistant coach leaving shouldn't take their work with
+      // them.
+      const headCoach = await prisma.user.findFirst({
+        where: { teamId: target.teamId, role: "COACH", isHeadCoach: true },
+      });
+      if (headCoach) {
+        await prisma.program.updateMany({ where: { createdById: target.id }, data: { createdById: headCoach.id } });
+      }
+      await prisma.user.delete({ where: { id: target.id } });
+      return res.status(204).send();
+    }
 
-  const teamId = target.teamId;
-  await prisma.$transaction([
-    // Programs (and their phases/weeks/days/exercises/assignments, via
-    // cascade) have to go before the users who created them, since
-    // Program.createdById would otherwise block deleting those users.
-    prisma.program.deleteMany({ where: { teamId } }),
-    // Deleting every user on the team cascades their workout logs, test
-    // results, wearable data, chat messages, coach/athlete access grants,
-    // and any invites they sent.
-    prisma.user.deleteMany({ where: { teamId } }),
-    // Whatever's left (the exercise/test-type libraries, any remaining
-    // invites) cascades automatically when the team itself goes.
-    prisma.team.delete({ where: { id: teamId } }),
-  ]);
-  res.status(204).send();
+    const teamId = target.teamId;
+    await prisma.$transaction([
+      // Programs (and their phases/weeks/days/exercises/assignments, via
+      // cascade) have to go before the users who created them, since
+      // Program.createdById would otherwise block deleting those users.
+      prisma.program.deleteMany({ where: { teamId } }),
+      // Deleting every user on the team cascades their workout logs, test
+      // results, wearable data, chat messages, coach/athlete access grants,
+      // and any invites they sent.
+      prisma.user.deleteMany({ where: { teamId } }),
+      // Whatever's left (the exercise/test-type libraries, any remaining
+      // invites) cascades automatically when the team itself goes.
+      prisma.team.delete({ where: { id: teamId } }),
+    ]);
+    res.status(204).send();
+  } catch (err) {
+    console.error("deleteHeadCoach failed:", err);
+    res.status(500).json({ error: "Something went wrong removing that coach. Nothing was deleted." });
+  }
 }
