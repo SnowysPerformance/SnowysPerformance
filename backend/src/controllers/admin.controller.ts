@@ -42,9 +42,8 @@ export async function listTeams(req: Request, res: Response) {
         headCoach,
         // Every coach on this team, head coach included — so an account
         // created back before invites were mandatory (self-registered, or
-        // added directly by a head coach) still shows up here. Only the
-        // head coach can be suspended/removed from this page; the rest are
-        // listed for visibility only.
+        // added directly by a head coach) still shows up here, and can be
+        // suspended or removed just like any other coach.
         coaches,
         coachCount: coaches.length,
         athleteCount: t.users.filter((u) => u.role === "ATHLETE").length,
@@ -101,13 +100,13 @@ export async function revokeHeadCoachInvite(req: Request, res: Response) {
   res.status(204).send();
 }
 
-// Suspend/unsuspend a head coach's OWN login only — their assistant
-// coaches and athletes keep working normally, and all of the team's data
+// Suspend/unsuspend any coach's login — head coach or assistant. Their
+// teammates keep working normally either way, and all of the team's data
 // stays exactly as it is. Un-suspending restores access immediately.
 export async function setHeadCoachSuspended(req: Request, res: Response) {
   if (!(await ensureAdmin(req, res))) return;
   const target = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!target || target.role !== "COACH" || !target.isHeadCoach) {
+  if (!target || target.role !== "COACH") {
     return res.status(404).json({ error: "Not found" });
   }
   if (target.isPlatformAdmin) return res.status(400).json({ error: "Can't suspend the platform admin's own account." });
@@ -121,17 +120,25 @@ export async function setHeadCoachSuspended(req: Request, res: Response) {
   res.json(updated);
 }
 
-// Permanently deletes a head coach AND their entire team — every
-// assistant coach, athlete, program, workout log, test result, and chat
-// message on it. This can't be undone, which the frontend confirms
-// before ever calling this.
+// Removes a coach account. An assistant coach is just that one account —
+// the team, its athletes, and every other coach on it are untouched. A
+// HEAD coach has no account without a team, so removing one takes the
+// entire team with it: every assistant coach, athlete, program, workout
+// log, test result, and chat message. This can't be undone, which the
+// frontend confirms before ever calling this (with wording that matches
+// which of the two is actually happening).
 export async function deleteHeadCoach(req: Request, res: Response) {
   if (!(await ensureAdmin(req, res))) return;
   const target = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!target || target.role !== "COACH" || !target.isHeadCoach) {
+  if (!target || target.role !== "COACH") {
     return res.status(404).json({ error: "Not found" });
   }
   if (target.isPlatformAdmin) return res.status(400).json({ error: "Can't delete the platform admin's own account." });
+
+  if (!target.isHeadCoach) {
+    await prisma.user.delete({ where: { id: target.id } });
+    return res.status(204).send();
+  }
 
   const teamId = target.teamId;
   await prisma.$transaction([
