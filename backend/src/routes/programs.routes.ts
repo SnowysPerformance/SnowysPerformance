@@ -23,6 +23,7 @@ router.delete("/weeks/:weekId", ctrl.deleteWeek);
 router.post("/days/:dayId/exercises", ctrl.addExercise);
 router.patch("/exercises/:exerciseId", ctrl.updateExercise);
 router.delete("/exercises/:exerciseId", ctrl.deleteExercise);
+router.post("/days/:dayId/reorder", ctrl.reorderExercises);
 
 router.post("/days/:dayId/group", ctrl.groupExercises);
 router.post("/days/:dayId/group/:groupId/ungroup", ctrl.ungroupExercises);
