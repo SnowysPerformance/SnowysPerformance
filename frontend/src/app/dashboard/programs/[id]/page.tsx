@@ -398,7 +398,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                         onDragStart={() => setDragging({ dayId: day.id, blockIdx })}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => { e.preventDefault(); handleBlockDrop(day, blocks, blockIdx); }}
-                        className={dragging?.dayId === day.id && dragging.blockIdx === blockIdx ? "opacity-40" : ""}
+                        className={dragging && dragging.dayId === day.id && dragging.blockIdx === blockIdx ? "opacity-40" : ""}
                       >
                         {b.type === "single" ? (
                           <ExerciseCard
