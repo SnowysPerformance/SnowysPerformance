@@ -10,7 +10,10 @@ import { signToken } from "../utils/jwt";
 // that exact email address (see invites.controller.ts). Coaches can also
 // still create an athlete login directly from the roster page, which stays
 // in teams.controller.ts since that already requires the coach to be
-// logged in and isn't the open door this closes.
+// logged in and isn't the open door this closes. A coach who already has
+// an account can still start an additional, brand-new team of their own at
+// any time — see createTeam below — since that doesn't open the platform
+// to strangers the way open registration did.
 
 export async function login(req: Request, res: Response) {
   const { email, password } = req.body;
@@ -77,4 +80,82 @@ export async function changePassword(req: Request, res: Response) {
   const passwordHash = await bcrypt.hash(newPassword, 10);
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
   res.status(204).send();
+}
+
+// Every team this coach belongs to (see TeamMembership), so the frontend
+// can render a team switcher. Marks which one is currently active (the
+// team the rest of the app is scoped to right now).
+export async function listMyTeams(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const memberships = await prisma.teamMembership.findMany({
+    where: { userId: req.user!.userId },
+    include: { team: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  res.json(
+    memberships.map((m) => ({
+      teamId: m.teamId,
+      teamName: m.team.name,
+      isHeadCoach: m.isHeadCoach,
+      accessLevel: m.accessLevel,
+      active: m.teamId === req.user!.teamId,
+    }))
+  );
+}
+
+// Self-serve: any coach can spin up a brand-new team on their own, no
+// admin approval needed — they become its sole, full-access head coach
+// and are switched into it immediately. They keep membership in every
+// other team they already belonged to and can switch back any time (see
+// switchTeam below); this never touches an existing team's data.
+export async function createTeam(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const name = (req.body.name || "").trim();
+  if (!name) return res.status(400).json({ error: "A team name is required" });
+
+  const team = await prisma.team.create({ data: { name } });
+  await prisma.teamMembership.create({
+    data: { userId: req.user!.userId, teamId: team.id, isHeadCoach: true, accessLevel: "FULL" },
+  });
+
+  const updated = await prisma.user.update({
+    where: { id: req.user!.userId },
+    data: { teamId: team.id, isHeadCoach: true, accessLevel: "FULL" },
+  });
+
+  const token = signToken({ userId: updated.id, role: updated.role as "COACH" | "ATHLETE", teamId: updated.teamId });
+  res.status(201).json({
+    token,
+    user: {
+      id: updated.id, name: updated.name, email: updated.email, role: updated.role, teamId: updated.teamId,
+      isHeadCoach: updated.isHeadCoach, isPlatformAdmin: updated.isPlatformAdmin,
+    },
+  });
+}
+
+// Switch which of a coach's teams is "active." Every other endpoint in the
+// app scopes its data by the team on the User row (req.user.teamId), so
+// this copies the chosen membership's role/access onto that row and hands
+// back a fresh token carrying the new team — the frontend saves it exactly
+// like a fresh login and reloads.
+export async function switchTeam(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const membership = await prisma.teamMembership.findUnique({
+    where: { userId_teamId: { userId: req.user!.userId, teamId: req.params.teamId } },
+  });
+  if (!membership) return res.status(404).json({ error: "You're not a member of that team" });
+
+  const updated = await prisma.user.update({
+    where: { id: req.user!.userId },
+    data: { teamId: membership.teamId, isHeadCoach: membership.isHeadCoach, accessLevel: membership.accessLevel },
+  });
+
+  const token = signToken({ userId: updated.id, role: updated.role as "COACH" | "ATHLETE", teamId: updated.teamId });
+  res.json({
+    token,
+    user: {
+      id: updated.id, name: updated.name, email: updated.email, role: updated.role, teamId: updated.teamId,
+      isHeadCoach: updated.isHeadCoach, isPlatformAdmin: updated.isPlatformAdmin,
+    },
+  });
 }

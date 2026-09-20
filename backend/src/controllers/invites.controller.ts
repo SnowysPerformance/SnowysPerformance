@@ -10,9 +10,10 @@ const INVITE_TTL_DAYS = 14;
 // join THIS team — either as an athlete, or as an assistant coach (FULL
 // access to every athlete, or RESTRICTED to a chosen list). Only the head
 // coach can send an assistant-coach invite; any coach can invite an
-// athlete. Handing someone a whole separate, brand-new team is now an
-// admin-only action (see admin.controller.ts) — a regular coach can't do
-// that here anymore.
+// athlete. Handing someone a whole separate, brand-new team used to be
+// admin-only — now any coach can start one themselves directly (see
+// createTeam in auth.controller.ts), so that case no longer goes through
+// invites at all.
 export async function createInvite(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Only coaches can send invites" });
   const email = (req.body.email || "").trim().toLowerCase();
@@ -135,6 +136,16 @@ export async function acceptInvite(req: Request, res: Response) {
       isHeadCoach: invite.role === "COACH" && invite.newTeam,
     },
   });
+
+  // Coaches keep a TeamMembership row for every team they belong to (see
+  // TeamMembership in schema.prisma) so they can be added to another team
+  // later and switch between them — a brand-new team from an invite, or a
+  // same-team co-coach invite, both start that history here.
+  if (user.role === "COACH") {
+    await prisma.teamMembership.create({
+      data: { userId: user.id, teamId, isHeadCoach: user.isHeadCoach, accessLevel: user.accessLevel },
+    });
+  }
 
   if (invite.role === "COACH" && !invite.newTeam && invite.accessLevel === "RESTRICTED" && Array.isArray(invite.athleteAccessIds)) {
     const ids = (invite.athleteAccessIds as string[]).filter((id) => typeof id === "string");
