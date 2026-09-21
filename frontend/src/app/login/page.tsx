@@ -51,13 +51,7 @@ export default function LoginPage() {
           </Link>
         </p>
         <p className="text-xs text-faint text-center">
-          <Link className="underline" href="/terms">
-            Terms
-          </Link>{" "}
-          ·{" "}
-          <Link className="underline" href="/privacy">
-            Privacy Policy
-          </Link>
+          <Link className="underline" href="/terms">Terms</Link> · <Link className="underline" href="/privacy">Privacy</Link>
         </p>
       </form>
     </div>
