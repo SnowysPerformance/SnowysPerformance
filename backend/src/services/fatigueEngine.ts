@@ -48,10 +48,36 @@ export async function computeFatigue(athleteId: string, teamId: string): Promise
     };
   }
 
+  // ACWR is only meaningful once there's an actual multi-week baseline to
+  // compare against. Without this, a single early workout looks like a
+  // massive spike against almost no chronic history (e.g. one workout
+  // divided by "4 weeks" of data that's really only a few days old) and
+  // wrongly fires a HIGH_RISK/deload flag right out of the gate.
+  const earliestLogMs = Math.min(...logs.map((l) => l.date.getTime()));
+  const daysOfHistory = (now.getTime() - earliestLogMs) / DAY_MS;
+  const MIN_HISTORY_DAYS = 14;
+
+  if (daysOfHistory < MIN_HISTORY_DAYS) {
+    const acuteLoadSoFar = logs.reduce((s, l) => s + l.volumeLoad, 0);
+    return {
+      athleteId,
+      acuteLoad: Math.round(acuteLoadSoFar),
+      chronicLoad: 0,
+      acwr: null,
+      recoveryAvg7d: null,
+      flag: "INSUFFICIENT_DATA",
+      message: `Still building a training history (${Math.max(1, Math.round(daysOfHistory))} of ${MIN_HISTORY_DAYS} days) before a fatigue trend can be calculated reliably.`,
+    };
+  }
+
   const since7 = new Date(now.getTime() - 7 * DAY_MS);
   const acuteLoad = logs.filter((l) => l.date >= since7).reduce((s, l) => s + l.volumeLoad, 0);
   const totalLoad28 = logs.reduce((s, l) => s + l.volumeLoad, 0);
-  const chronicLoad = totalLoad28 / 4; // average *weekly* load over 4 weeks, comparable to acuteLoad
+  // Average *weekly* load, but over however many weeks of real history exist
+  // (capped at the usual 4-week chronic window) rather than always dividing
+  // by 4 — otherwise early weeks look artificially spiky.
+  const weeksOfData = Math.min(4, daysOfHistory / 7);
+  const chronicLoad = totalLoad28 / weeksOfData;
 
   const acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
 
