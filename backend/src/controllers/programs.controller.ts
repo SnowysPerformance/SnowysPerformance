@@ -173,7 +173,7 @@ export async function duplicateWeek(req: Request, res: Response) {
           exercises: {
             create: d.exercises.map((ex) => ({
               exerciseName: ex.exerciseName, type: ex.type, mode: ex.mode, sets: ex.sets, reps: ex.reps,
-              percentOfMax: ex.percentOfMax, weight: ex.weight, methodName: ex.methodName, band: ex.band,
+              percentOfMax: ex.percentOfMax, weight: ex.weight, setDetails: ex.setDetails as any, methodName: ex.methodName, band: ex.band,
               distance: ex.distance, resisted: ex.resisted, resistance: ex.resistance, restSeconds: ex.restSeconds,
               isWarmup: ex.isWarmup, isTest: ex.isTest, groupId: ex.groupId, groupLabel: ex.groupLabel, order: ex.order,
               notes: ex.notes,
@@ -220,6 +220,7 @@ export async function addExercise(req: Request, res: Response) {
       reps: b.reps ? Number(b.reps) : null,
       percentOfMax: b.percentOfMax ? Number(b.percentOfMax) : null,
       weight: b.weight ? Number(b.weight) : null,
+      setDetails: b.setDetails !== undefined ? b.setDetails : null,
       methodName: b.methodName || null,
       band: b.band || null,
       distance: b.distance || null,
@@ -254,6 +255,7 @@ export async function updateExercise(req: Request, res: Response) {
       reps: b.reps !== undefined ? (b.reps ? Number(b.reps) : null) : existing.reps,
       percentOfMax: b.percentOfMax !== undefined ? (b.percentOfMax ? Number(b.percentOfMax) : null) : existing.percentOfMax,
       weight: b.weight !== undefined ? (b.weight ? Number(b.weight) : null) : existing.weight,
+      setDetails: b.setDetails !== undefined ? b.setDetails : existing.setDetails,
       methodName: b.methodName !== undefined ? b.methodName : existing.methodName,
       band: b.band !== undefined ? b.band : existing.band,
       distance: b.distance !== undefined ? b.distance : existing.distance,
