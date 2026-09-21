@@ -59,3 +59,23 @@ export function setTargetLabel(ex: any, entry: any, bestE1rm: Record<string, num
   }
   return targetLabel(ex, bestE1rm);
 }
+
+// Groups a day's flat exercise list into display blocks: consecutive
+// exercises sharing a groupId (a superset/circuit the coach grouped
+// together) become one "group" block, everything else is a "single"
+// block. Used by both the coach's plan builder and the athlete's
+// day-log view so a superset looks the same -- grouped -- in both places.
+export function buildDayBlocks(day: any) {
+  const seen = new Set<string>();
+  const blocks: any[] = [];
+  let letterIdx = 0;
+  (day.exercises || []).forEach((ex: any) => {
+    if (ex.groupId) {
+      if (seen.has(ex.groupId)) return;
+      seen.add(ex.groupId);
+      const members = day.exercises.filter((x: any) => x.groupId === ex.groupId);
+      blocks.push({ type: "group", groupId: ex.groupId, label: ex.groupLabel, letter: String.fromCharCode(65 + letterIdx++), members });
+    } else blocks.push({ type: "single", ex });
+  });
+  return blocks;
+}
