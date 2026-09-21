@@ -32,6 +32,22 @@ function patchExerciseInProgram(program: any, exerciseId: string, patch: any) {
   };
 }
 
+// patch a single phase's own fields (e.g. renaming it)
+function patchPhaseInProgram(program: any, phaseId: string, patch: any) {
+  return { ...program, phases: program.phases.map((p: any) => (p.id === phaseId ? { ...p, ...patch } : p)) };
+}
+
+// patch a single week's own fields (e.g. renaming it), wherever it lives in the phase tree
+function patchWeekInProgram(program: any, weekId: string, patch: any) {
+  return {
+    ...program,
+    phases: program.phases.map((ph: any) => ({
+      ...ph,
+      microcycles: ph.microcycles.map((w: any) => (w.id === weekId ? { ...w, ...patch } : w)),
+    })),
+  };
+}
+
 // reorder a day's exercises to match an explicit id order (used after drag-and-drop)
 function reorderDayInProgram(program: any, dayId: string, orderedIds: string[]) {
   return {
@@ -183,6 +199,33 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
       setError(err.message || "Couldn't save that change — reloading the plan");
       load();
     }
+  }
+
+  // Same instant-local-update + debounced-save pattern as updateExercise/flushExercise
+  // above, generalized for renaming a phase or a week — every keystroke updates the
+  // screen immediately, and one PATCH goes out ~500ms after typing stops.
+  function debouncedUpdate(key: string, patch: any, apply: (prev: any) => any, endpoint: string) {
+    setProgram((prev: any) => (prev ? apply(prev) : prev));
+    pendingPatches.current[key] = { ...(pendingPatches.current[key] || {}), ...patch };
+    clearTimeout(saveTimers.current[key]);
+    saveTimers.current[key] = setTimeout(() => flushGeneric(key, endpoint), 500);
+  }
+  async function flushGeneric(key: string, endpoint: string) {
+    const patch = pendingPatches.current[key];
+    if (!patch) return;
+    delete pendingPatches.current[key];
+    try {
+      await api(endpoint, { method: "PATCH", body: JSON.stringify(patch) });
+    } catch (err: any) {
+      setError(err.message || "Couldn't save that change — reloading the plan");
+      load();
+    }
+  }
+  function updatePhaseName(phaseId: string, name: string) {
+    debouncedUpdate(`phase:${phaseId}`, { name }, (prev) => patchPhaseInProgram(prev, phaseId, { name }), `/api/programs/phases/${phaseId}`);
+  }
+  function updateWeekName(weekId: string, name: string) {
+    debouncedUpdate(`week:${weekId}`, { name }, (prev) => patchWeekInProgram(prev, weekId, { name }), `/api/programs/weeks/${weekId}`);
   }
 
   async function deleteExercise(exerciseId: string) {
@@ -392,7 +435,16 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
               {isCoach && (
                 <button onClick={(e) => { e.stopPropagation(); deletePhase(p.id); }} className="absolute top-1 right-1 text-faint hover:text-red-400 text-xs">✕</button>
               )}
-              <div className="font-display text-sm font-semibold pr-4">{p.name}</div>
+              {isCoach ? (
+                <input
+                  value={p.name}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => updatePhaseName(p.id, e.target.value)}
+                  className="font-display text-sm font-semibold pr-4 bg-transparent border-none outline-none w-full focus:bg-void rounded"
+                />
+              ) : (
+                <div className="font-display text-sm font-semibold pr-4">{p.name}</div>
+              )}
               {p.goal && <div className="text-xs text-muted mt-1">{p.goal}</div>}
             </div>
           ))}
@@ -413,12 +465,22 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                     <button onClick={() => deleteWeek(w.id)} title="Delete" className="w-4 h-4 rounded-full bg-raised border border-edge text-[9px] text-faint hover:text-red-400 flex items-center justify-center">✕</button>
                   </div>
                 )}
-                <button
-                  onClick={() => setSelectedWeekId(w.id)}
-                  className={`min-w-[70px] rounded-lg border px-3 py-2 text-xs font-semibold ${w.id === week?.id ? "border-accent bg-raised text-primary" : "border-edgesoft bg-void text-muted"}`}
-                >
-                  {w.name}
-                </button>
+                {isCoach ? (
+                  <input
+                    value={w.name || ""}
+                    onFocus={() => setSelectedWeekId(w.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => updateWeekName(w.id, e.target.value)}
+                    className={`min-w-[70px] rounded-lg border px-3 py-2 text-xs font-semibold text-center bg-transparent outline-none ${w.id === week?.id ? "border-accent bg-raised text-primary" : "border-edgesoft bg-void text-muted"}`}
+                  />
+                ) : (
+                  <button
+                    onClick={() => setSelectedWeekId(w.id)}
+                    className={`min-w-[70px] rounded-lg border px-3 py-2 text-xs font-semibold ${w.id === week?.id ? "border-accent bg-raised text-primary" : "border-edgesoft bg-void text-muted"}`}
+                  >
+                    {w.name}
+                  </button>
+                )}
               </div>
             ))}
             {isCoach && (
