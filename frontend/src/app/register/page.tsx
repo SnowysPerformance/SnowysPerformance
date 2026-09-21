@@ -64,15 +64,9 @@ export default function RegisterPage() {
         <input className={inputClass} type="password" placeholder="Password" value={form.password} onChange={(e) => update("password", e.target.value)} />
         <button className="w-full bg-accent text-accenttext font-semibold rounded px-3 py-2 hover:bg-accentstrong transition-colors">Create account</button>
         <p className="text-xs text-faint text-center">
-          By creating an account, you agree to our{" "}
-          <Link className="underline text-accent" href="/terms">
-            Terms
-          </Link>{" "}
-          and{" "}
-          <Link className="underline text-accent" href="/privacy">
-            Privacy Policy
-          </Link>
-          .
+          By creating an account you agree to our{" "}
+          <Link className="underline" href="/terms">Terms</Link> and{" "}
+          <Link className="underline" href="/privacy">Privacy Policy</Link>.
         </p>
       </form>
     </div>
