@@ -100,6 +100,22 @@ export async function addPhase(req: Request, res: Response) {
   res.status(201).json(phase);
 }
 
+export async function updatePhase(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const phase = await prisma.programPhase.findUnique({ where: { id: req.params.phaseId }, include: { program: true } });
+  if (!phase || phase.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+
+  const updated = await prisma.programPhase.update({
+    where: { id: phase.id },
+    data: {
+      name: req.body.name !== undefined ? req.body.name : phase.name,
+      goal: req.body.goal !== undefined ? req.body.goal : phase.goal,
+      weeks: req.body.weeks !== undefined ? (req.body.weeks ? Number(req.body.weeks) : null) : phase.weeks,
+    },
+  });
+  res.json(updated);
+}
+
 export async function deletePhase(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
   const phase = await prisma.programPhase.findUnique({ where: { id: req.params.phaseId }, include: { program: true } });
