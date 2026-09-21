@@ -33,6 +33,12 @@ const RECOVERY_TREND_LABEL: Record<string, string> = {
   STABLE: "→ Recovery stable",
 };
 
+const SLEEP_TREND_LABEL: Record<string, string> = {
+  IMPROVING: "↑ Sleep improving",
+  DECLINING: "↓ Sleep declining",
+  STABLE: "→ Sleep stable",
+};
+
 // Fatigue/overtraining risk and progress trend are coaching tools — coaches
 // use this to spot athletes who need a deload or a programming change,
 // athletes don't see a risk flag on themselves. (Athletes track their own
@@ -68,8 +74,8 @@ export default function FatiguePage() {
     <div>
       <h1 className="font-display text-xl font-semibold mb-2">Team Fatigue & Deload Insights</h1>
       <p className="text-sm text-faint mb-4">
-        Based on Acute:Chronic Workload Ratio (7-day load vs. up-to-4-week average), wearable recovery trends, and recent PR/volume
-        trends — recalculated live from each athlete's latest data.
+        Based on Acute:Chronic Workload Ratio (7-day load vs. up-to-4-week average), wearable recovery and sleep trends, each
+        athlete's own personal baselines, and recent PR/volume trends — recalculated live from each athlete's latest data.
       </p>
 
       {!loading && data.length > 0 && (
@@ -105,8 +111,17 @@ export default function FatiguePage() {
             </div>
 
             <div className="text-sm text-faint mt-2">
-              ACWR: {d.acwr ?? "—"} · Acute load: {d.acuteLoad} · Chronic (wk avg): {d.chronicLoad} · Recovery avg: {d.recoveryAvg7d ?? "—"}%
+              ACWR: {d.acwr ?? "—"} · Acute load: {d.acuteLoad} · Chronic (wk avg): {d.chronicLoad}
+            </div>
+
+            <div className="text-sm text-faint mt-1">
+              Recovery avg: {d.recoveryAvg7d ?? "—"}%
+              {d.recoveryBaseline != null && <span className="text-xs text-muted"> (usual ~{d.recoveryBaseline}%)</span>}
               {d.recoveryTrend && <span className="ml-2">{RECOVERY_TREND_LABEL[d.recoveryTrend]}</span>}
+              <span className="mx-2">·</span>
+              Sleep avg: {d.sleepAvg7d ?? "—"}%
+              {d.sleepBaseline != null && <span className="text-xs text-muted"> (usual ~{d.sleepBaseline}%)</span>}
+              {d.sleepTrend && <span className="ml-2">{SLEEP_TREND_LABEL[d.sleepTrend]}</span>}
             </div>
 
             {d.deloadRecommended && d.deloadReason && (
