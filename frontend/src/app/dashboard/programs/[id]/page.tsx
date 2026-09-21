@@ -3,60 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
-
-const e1rm = (weight: number, reps: number) => (reps <= 1 ? weight : weight * (1 + reps / 30));
-const round5 = (n: number) => Math.round(n / 5) * 5;
-
-function computeBestE1rm(logs: any[]): Record<string, number> {
-  const best: Record<string, number> = {};
-  logs.forEach((l) => {
-    if (l.type && l.type !== "weighted") return;
-    const valid = (l.sets || []).filter((s: any) => s.weight > 0 && s.reps > 0);
-    if (!valid.length) return;
-    const top = Math.max(...valid.map((s: any) => e1rm(s.weight, s.reps)));
-    if (!best[l.exerciseName] || top > best[l.exerciseName]) best[l.exerciseName] = top;
-  });
-  return best;
-}
-function computedWeight(ex: any, bestE1rm: Record<string, number>): number | null {
-  if (ex.type && ex.type !== "weighted") return null;
-  if (ex.weight) return ex.weight; // a directly-entered weight always wins
-  const max = bestE1rm[ex.exerciseName];
-  if (!max || !ex.percentOfMax) return null;
-  return round5((max * ex.percentOfMax) / 100);
-}
-function targetLabel(ex: any, bestE1rm: Record<string, number>): string {
-  if (!ex.type || ex.type === "weighted") {
-    const w = computedWeight(ex, bestE1rm);
-    return w ? `${w} lb` : "need 1RM";
-  }
-  if (ex.type === "banded") return ex.band || "";
-  if (ex.type === "sprint") return `${ex.distance || ""}yd${ex.resisted ? " (resisted)" : ""}`;
-  return "—";
-}
-
-// Per-set overrides: ex.setDetails, when present, is an array of
-// { reps?, percentOfMax?, weight? } — one entry per set — for a
-// ramping/wave-loading scheme where each set has its own target. These
-// mirror computedWeight/targetLabel but read one set's own values.
-function hasSetDetails(ex: any): boolean {
-  return Array.isArray(ex.setDetails) && ex.setDetails.length > 0;
-}
-function computedWeightForSet(ex: any, entry: any, bestE1rm: Record<string, number>): number | null {
-  if (ex.type && ex.type !== "weighted") return null;
-  if (entry.weight) return Number(entry.weight);
-  const max = bestE1rm[ex.exerciseName];
-  const pct = entry.percentOfMax ? Number(entry.percentOfMax) : null;
-  if (!max || !pct) return null;
-  return round5((max * pct) / 100);
-}
-function setTargetLabel(ex: any, entry: any, bestE1rm: Record<string, number>): string {
-  if (!ex.type || ex.type === "weighted") {
-    const w = computedWeightForSet(ex, entry, bestE1rm);
-    return w ? `${w} lb` : "need 1RM";
-  }
-  return targetLabel(ex, bestE1rm);
-}
+import { computeBestE1rm, computedWeight, targetLabel, hasSetDetails, computedWeightForSet, setTargetLabel } from "@/lib/planTargets";
 
 // HTML-escape a value before interpolating it into the printable day sheet
 // built in printDay() below — exercise names/notes are free text a coach
@@ -260,8 +207,11 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
       await load();
     });
   }
-  function logThis(exerciseName: string) {
-    router.push(`/dashboard/workouts?exercise=${encodeURIComponent(exerciseName)}`);
+  // Sends the athlete to the workouts page with the whole day's plan loaded
+  // (every exercise, not just one) so they can log the full workout in one
+  // place, with each exercise's prescribed weight pre-filled and editable.
+  function logDay(dayId: string) {
+    router.push(`/dashboard/workouts?programId=${params.id}&dayId=${dayId}`);
   }
 
   function buildBlocks(day: any) {
@@ -542,7 +492,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                             onToggleSelect={() => setSelected((s) => ({ ...s, [b.ex.id]: !s[b.ex.id] }))}
                             onUpdate={(patch: any) => updateExercise(b.ex.id, patch)}
                             onDelete={() => deleteExercise(b.ex.id)}
-                            onLogThis={() => logThis(b.ex.exerciseName)}
+                            onLogThis={() => logDay(day.id)}
                           />
                         ) : (
                           <div className="border border-dashed border-accent bg-accentsoft rounded-lg p-2" style={{ background: "rgba(126,200,227,0.08)" }}>
@@ -562,7 +512,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                                   onToggleSelect={() => setSelected((s) => ({ ...s, [m.id]: !s[m.id] }))}
                                   onUpdate={(patch: any) => updateExercise(m.id, patch)}
                                   onDelete={() => deleteExercise(m.id)}
-                                  onLogThis={() => logThis(m.exerciseName)}
+                                  onLogThis={() => logDay(day.id)}
                                   hideDragHandle
                                 />
                               </div>
@@ -582,7 +532,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                     <button onClick={() => addExercise(day.id)} className="w-full text-xs border border-edge rounded px-2 py-1.5 mt-2 text-muted hover:text-primary">+ Add exercise</button>
                   )}
                   {!isCoach && day.exercises.length > 0 && (
-                    <button onClick={() => logThis(day.exercises[0]?.exerciseName)} className="w-full text-xs bg-accent text-accenttext font-semibold rounded px-2 py-1.5 mt-2">
+                    <button onClick={() => logDay(day.id)} className="w-full text-xs bg-accent text-accenttext font-semibold rounded px-2 py-1.5 mt-2">
                       Log this day
                     </button>
                   )}
