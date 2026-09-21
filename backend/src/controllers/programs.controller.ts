@@ -38,6 +38,9 @@ const fullInclude = {
     },
   },
   assignments: { include: { athlete: { select: { id: true, name: true } } } },
+  // Only used to show the team name at the top of a printed day sheet —
+  // every other screen already gets the team name from the logged-in user.
+  team: { select: { name: true } },
 };
 
 export async function getProgram(req: Request, res: Response) {
