@@ -313,14 +313,14 @@ function WorkoutsPageInner() {
 
         {entryKind === "workout" && (
           <form onSubmit={submitWorkout} className="bg-surface border border-edge rounded-lg p-4 max-w-2xl space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input type="date" className={inputClass} value={date} onChange={(e) => setDate(e.target.value)} />
               {!isAthlete && (
                 <input className={inputClass} placeholder="Session label (optional, e.g. AM Lift)" value={label} onChange={(e) => setLabel(e.target.value)} />
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {isAthlete ? (
                 <div className={inputClass + " bg-raised cursor-not-allowed"}>
                   {exerciseName || <span className="text-faint">Use "Log this" on your plan to pick an exercise</span>}
@@ -399,7 +399,7 @@ function WorkoutsPageInner() {
 
         {entryKind === "test" && (
           <form onSubmit={submitTest} className="bg-surface border border-edge rounded-lg p-4 max-w-2xl space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input type="date" className={inputClass} value={date} onChange={(e) => setDate(e.target.value)} />
               <select className={inputClass} value={testOptionKey} onChange={(e) => setTestOptionKey(e.target.value)}>
                 {testOptions.map((o) => (
@@ -409,7 +409,7 @@ function WorkoutsPageInner() {
               </select>
             </div>
             {isCustomTest && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input className={inputClass} placeholder="Test name" value={testCustomName} onChange={(e) => setTestCustomName(e.target.value)} />
                 <input className={inputClass} placeholder="Unit (in / sec / lb …)" value={testCustomUnit} onChange={(e) => setTestCustomUnit(e.target.value)} />
               </div>
