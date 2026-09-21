@@ -178,6 +178,12 @@ model ProgramExercise {
   reps          Int?
   percentOfMax  Float?
   weight        Float?
+  // Optional per-set overrides, e.g. a ramping/wave-loading scheme where each
+  // set has its own reps/%1RM/weight — [{ reps, percentOfMax, weight }, ...],
+  // one entry per set. When set, this takes precedence over the uniform
+  // reps/percentOfMax/weight fields above for display and printing; when
+  // null/empty, the exercise behaves exactly as before (same target every set).
+  setDetails    Json?
   // Target bar speed (velocity-based training), in meters/second. Optional —
   // only set when the coach wants a velocity target instead of/alongside a
   // weight or %1RM target.
