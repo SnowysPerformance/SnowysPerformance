@@ -262,7 +262,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
       let targetHtml: string;
       if (hasSetDetails(ex)) {
         setsRepsHtml = ex.setDetails
-          .map((s: any, i: number) => `${i + 1}. ${escapeHtml(String(s.reps || ex.reps || "—"))}`)
+          .map((s: any, i: number) => `${i + 1}. ${escapeHtml(isTimeBased ? `${s.duration || ex.duration || "—"}s` : String(s.reps || ex.reps || "—"))}`)
           .join("<br/>");
         targetHtml = ex.setDetails.map((s: any) => escapeHtml(setTargetLabel(ex, s, bestE1rm))).join("<br/>");
       } else {
@@ -563,7 +563,7 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
         {hasSetDetails(ex) ? (
           <div className="text-[11px] text-muted mt-1 space-y-0.5">
             {ex.setDetails.map((s: any, i: number) => (
-              <div key={i}>Set {i + 1}: {s.reps || ex.reps || "?"} reps — {setTargetLabel(ex, s, bestE1rm)}</div>
+              <div key={i}>Set {i + 1}: {isTimeBased ? `${s.duration || ex.duration || "?"}s` : `${s.reps || ex.reps || "?"} reps`} — {setTargetLabel(ex, s, bestE1rm)}</div>
             ))}
           </div>
         ) : (
@@ -585,6 +585,7 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
       const n = Number(ex.sets) || 1;
       const rows = Array.from({ length: n }, () => ({
         reps: ex.reps || "",
+        duration: ex.duration || "",
         percentOfMax: ex.percentOfMax || "",
         weight: ex.weight || "",
       }));
@@ -660,6 +661,7 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
           <div className="flex gap-1">
             <input className={inputClass} type="number" placeholder="Sets" value={ex.sets || ""} onChange={(e) => onUpdate({ sets: e.target.value })} />
             {!isTimeBased && <input className={inputClass} type="number" placeholder="Reps" value={ex.reps || ""} onChange={(e) => onUpdate({ reps: e.target.value })} />}
+            {isTimeBased && <input className={inputClass} type="number" placeholder="Duration (sec)" value={ex.duration || ""} onChange={(e) => onUpdate({ duration: e.target.value })} />}
           </div>
           {ex.type === "weighted" && (
             <div className="flex gap-1 items-center">
@@ -678,6 +680,9 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
               <span className="text-[9px] text-faint w-3 flex-shrink-0">{i + 1}</span>
               {!isTimeBased && (
                 <input className={inputClass} type="number" placeholder="Reps" value={s.reps || ""} onChange={(e) => updateSetRow(i, { reps: e.target.value })} />
+              )}
+              {isTimeBased && (
+                <input className={inputClass} type="number" placeholder="Sec" value={s.duration || ""} onChange={(e) => updateSetRow(i, { duration: e.target.value })} />
               )}
               {ex.type === "weighted" && (
                 <>
