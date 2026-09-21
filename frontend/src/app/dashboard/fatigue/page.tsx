@@ -11,28 +11,36 @@ const FLAG_STYLES: Record<string, string> = {
   INSUFFICIENT_DATA: "bg-raised text-faint border-edge",
 };
 
+// Fatigue/overtraining risk is a coaching tool — coaches use it to spot
+// athletes who need a deload, athletes don't see a risk flag on themselves.
+// (Athletes track their own training on the Progress page instead.)
 export default function FatiguePage() {
   const { user } = useAuth();
   const [data, setData] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!user) return;
-    if (user.role === "COACH") {
-      api("/api/fatigue/team").then(setData).catch(console.error);
-    } else {
-      api(`/api/fatigue/${user.id}`).then((d) => setData([d])).catch(console.error);
-    }
+    if (!user || user.role !== "COACH") return;
+    api("/api/fatigue/team").then(setData).catch(console.error);
   }, [user]);
+
+  if (user && user.role !== "COACH") {
+    return (
+      <div>
+        <h1 className="font-display text-xl font-semibold mb-4">Team Fatigue</h1>
+        <p className="text-sm text-faint">This page is for coaches. Head to your Progress page to see your own charts and recovery trends.</p>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <h1 className="font-display text-xl font-semibold mb-4">Fatigue & Overtraining Risk</h1>
-      <p className="text-sm text-faint mb-4">Based on Acute:Chronic Workload Ratio (7-day load vs. 4-week average) plus wearable recovery, where available.</p>
+      <h1 className="font-display text-xl font-semibold mb-4">Team Fatigue & Overtraining Risk</h1>
+      <p className="text-sm text-faint mb-4">Based on Acute:Chronic Workload Ratio (7-day load vs. up-to-4-week average) plus wearable recovery, where available.</p>
       <div className="space-y-3">
         {data.map((d) => (
           <div key={d.athleteId} className="bg-surface border border-edge rounded p-4">
             <div className="flex justify-between items-center">
-              <span className="font-medium">{d.athleteId === user?.id ? "You" : d.athleteId}</span>
+              <span className="font-medium">{d.athleteId}</span>
               <span className={`text-xs font-semibold rounded px-2 py-1 border ${FLAG_STYLES[d.flag]}`}>{d.flag.replace("_", " ")}</span>
             </div>
             <div className="text-sm text-faint mt-2">
