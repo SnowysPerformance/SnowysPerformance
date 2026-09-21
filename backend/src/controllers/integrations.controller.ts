@@ -169,6 +169,28 @@ export async function whoopDisconnect(req: Request, res: Response) {
   res.status(204).send();
 }
 
+// Recent day-by-day wearable readings (recovery/strain/sleep/resting HR) for
+// an athlete, newest first — used to render an actual recovery trend instead
+// of just folding today's recovery % into the fatigue flag's fine print.
+// An athlete can see their own; a coach can see any athlete on their team.
+export async function getWearableHistory(req: Request, res: Response) {
+  const athleteId = req.params.athleteId;
+  if (req.user!.role === "ATHLETE" && athleteId !== req.user!.userId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const athlete = await prisma.user.findUnique({ where: { id: athleteId } });
+  if (!athlete || athlete.teamId !== req.user!.teamId) return res.status(404).json({ error: "Athlete not found" });
+
+  const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const rows = await prisma.wearableData.findMany({
+    where: { athleteId, date: { gte: since } },
+    orderBy: { date: "asc" },
+    select: { date: true, source: true, recovery: true, strain: true, sleepScore: true, restingHR: true },
+  });
+  res.json(rows);
+}
+
 // If the stored access token is still good for at least another minute,
 // reuse it; otherwise use the refresh token to get a new one and persist
 // it. Returns null if we have no way to get a valid token right now (the
