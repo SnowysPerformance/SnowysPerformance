@@ -375,7 +375,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
         ))}
       </datalist>
       {isCoach && program.assignments?.length > 0 && (
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
           <span className="text-xs text-faint">Preview 1RM for:</span>
           <select className={inputClass} style={{ width: 200 }} value={previewAthleteId} onChange={(e) => setPreviewAthleteId(e.target.value)}>
             {program.assignments.map((a: any) => (
@@ -451,7 +451,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div className="font-display text-xs uppercase tracking-wide text-muted">{phase.name} · {week.name} — Day by Day</div>
             {isCoach && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] text-faint">Week starts:</span>
                 <input
                   type="date"
