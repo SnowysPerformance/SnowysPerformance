@@ -1,191 +1,118 @@
 import Link from "next/link";
 
-export const metadata = {
-  title: "Privacy Policy — Snowy's Performance",
-};
+const h2 = "font-display text-base font-semibold mt-8 mb-2 text-primary";
+const p = "text-sm text-muted leading-relaxed mb-3";
+const li = "text-sm text-muted leading-relaxed mb-1.5";
 
-export default function PrivacyPage() {
+export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-void text-primary">
-      <div className="max-w-3xl mx-auto px-4 py-10 md:py-16">
-        <Link href="/login" className="text-accent text-sm underline">
-          ← Back to Snowy's Performance
-        </Link>
-        <h1 className="font-display text-2xl md:text-3xl font-semibold mt-4 mb-2">Privacy Policy</h1>
-        <p className="text-xs text-faint mb-8">Effective date: September 21, 2026</p>
+      <div className="max-w-2xl mx-auto px-5 py-10">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-lg">❄️</span>
+          <span className="font-display font-semibold">Snowy's Performance</span>
+        </div>
+        <h1 className="font-display text-2xl font-bold mt-4">Privacy Policy</h1>
+        <p className="text-xs text-faint mt-1 mb-6">Last updated: [DATE] · Effective: [DATE]</p>
 
-        <div className="space-y-6 text-sm text-muted leading-relaxed">
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">1. Introduction</h2>
-            <p>
-              This Privacy Policy explains how Snowy's Performance ("we," "us") collects, uses, and protects
-              information when you use our training and performance-tracking platform (the "Service").
-            </p>
-          </section>
+        <div className="bg-surface border border-edge rounded-lg p-4 mb-6">
+          <p className="text-xs text-muted leading-relaxed">
+            This policy was drafted to plainly describe what Snowy's Performance actually collects and does with it. It is not a
+            substitute for advice from a licensed attorney — because this app stores health-related data (like WHOOP recovery and
+            sleep numbers) and is used by athletes under 18, it's worth having a lawyer review this before you rely on it for legal
+            protection, especially the children's-privacy section below.
+          </p>
+        </div>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">2. Information We Collect</h2>
-            <ul className="list-disc list-inside space-y-1">
-              <li>
-                <span className="text-primary">Account information:</span> name, email address, password (stored
-                securely, never in plain text), and role (coach or athlete).
-              </li>
-              <li>
-                <span className="text-primary">Performance &amp; training data:</span> testing results, workout
-                logs, training programs, and related notes entered by you or your coach.
-              </li>
-              <li>
-                <span className="text-primary">Team data:</span> team names and rosters, for coaches managing
-                athletes.
-              </li>
-              <li>
-                <span className="text-primary">Third-party fitness data</span> (when you connect an integration such
-                as WHOOP): recovery, strain, HRV, or similar metrics you choose to share.
-              </li>
-              <li>
-                <span className="text-primary">Log &amp; device data:</span> IP address, browser type, and pages
-                visited, collected automatically to keep the Service secure and working properly.
-              </li>
-            </ul>
-          </section>
+        <p className={p}>
+          This Privacy Policy explains how Snowy's Performance ("we," "us," "the app") collects, uses, and protects information
+          when a coach or athlete uses the platform. Snowy's Performance is operated by Mark Snowden, reachable at{" "}
+          <a className="text-accent underline" href="mailto:markbaseball2325@gmail.com">markbaseball2325@gmail.com</a>.
+        </p>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">3. How We Use Information</h2>
-            <p>We use the information we collect to:</p>
-            <ul className="list-disc list-inside mt-2 space-y-1">
-              <li>operate and improve the Service;</li>
-              <li>let coaches track and manage their athletes' training and testing;</li>
-              <li>display performance and, where connected, recovery/fatigue-related metrics;</li>
-              <li>communicate with you about your account; and</li>
-              <li>maintain the security of the Service.</li>
-            </ul>
-          </section>
+        <h2 className={h2}>Information We Collect</h2>
+        <p className={p}>We collect only what's needed to run the coaching platform:</p>
+        <ul className="list-disc pl-5 mb-3">
+          <li className={li}><span className="text-primary font-medium">Account information</span> — name, email address, and password (stored as a one-way hash, never in plain text), and whether you're registered as a coach or an athlete.</li>
+          <li className={li}><span className="text-primary font-medium">Team information</span> — the team you coach or belong to, and your role on it.</li>
+          <li className={li}><span className="text-primary font-medium">Training data</span> — workouts and programs a coach builds, and the sets, reps, and weights an athlete logs.</li>
+          <li className={li}><span className="text-primary font-medium">Coach's private notes</span> — notes a coach writes about an athlete, visible only to coaches on that athlete's team.</li>
+          <li className={li}><span className="text-primary font-medium">Wearable / health data</span> — if an athlete chooses to connect a WHOOP account, we receive recovery score, strain, sleep score, and resting heart rate from WHOOP. This is health-related data and is only collected if the athlete actively connects their own WHOOP account — it is never required to use the app.</li>
+          <li className={li}><span className="text-primary font-medium">Messages</span> — messages sent between a coach and an athlete inside the app.</li>
+          <li className={li}><span className="text-primary font-medium">Invite information</span> — the email address of anyone invited to join a team.</li>
+        </ul>
+        <p className={p}>
+          We do not collect payment information, and we do not use advertising trackers, ad networks, or third-party analytics
+          services. The only thing stored in your browser is a login token (so you stay signed in) — no tracking cookies.
+        </p>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">4. How We Share Information</h2>
-            <p>
-              We do not sell your personal information. Athlete data entered by a coach is visible to that athlete's
-              coach(es) and team, and to the athlete, as part of normal use of the Service. We may share information
-              with service providers who help us operate the Service (such as our hosting and database providers),
-              who are required to protect it. We may disclose information if required by law. If Snowy's Performance
-              is involved in a merger, acquisition, or sale of assets, your information may be transferred as part
-              of that transaction, and we will notify you of any resulting change in ownership or control of your
-              information.
-            </p>
-          </section>
+        <h2 className={h2}>How We Use This Information</h2>
+        <ul className="list-disc pl-5 mb-3">
+          <li className={li}>To operate the core features: building and assigning training programs, logging workouts, tracking progress and personal records, and coach-athlete messaging.</li>
+          <li className={li}>To show recovery and wearable trends to an athlete (and their coach, for athletes on that coach's team) when WHOOP is connected.</li>
+          <li className={li}>To keep accounts secure (for example, checking login credentials and account status).</li>
+          <li className={li}>To communicate with you about your account if needed (for example, responding to a support request).</li>
+        </ul>
+        <p className={p}>We do not sell personal information, and we do not share it for advertising purposes.</p>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">5. Data Storage &amp; Security</h2>
-            <p>
-              Data is stored on secure, industry-standard hosting infrastructure. We take reasonable technical and
-              administrative measures to protect your information, but no method of storage or transmission is
-              completely secure, and we cannot guarantee absolute security.
-            </p>
-          </section>
+        <h2 className={h2}>Who We Share Information With</h2>
+        <ul className="list-disc pl-5 mb-3">
+          <li className={li}><span className="text-primary font-medium">Your own team.</span> A coach can see the training data, notes, and wearable data of athletes on their team. An athlete can see their own data and whatever their coach shares with them.</li>
+          <li className={li}><span className="text-primary font-medium">Hosting providers.</span> The app's code and database run on Vercel and Railway, two hosting companies that store and process data on our behalf to keep the app running. They don't use your data for their own purposes.</li>
+          <li className={li}><span className="text-primary font-medium">WHOOP.</span> If an athlete connects WHOOP, we exchange data with WHOOP's servers under that athlete's own authorization, governed by WHOOP's own privacy policy. Disconnecting stops this at any time.</li>
+          <li className={li}>We may disclose information if required by law, or to protect the safety of a user or the public.</li>
+        </ul>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">6. Data Retention</h2>
-            <p>
-              We retain account and training data for as long as your account is active, or as needed to provide the
-              Service. You may request deletion of your account and associated data at any time by contacting us.
-            </p>
-          </section>
+        <h2 className={h2}>Children's Privacy</h2>
+        <p className={p}>
+          Snowy's Performance is used by athletes of many ages, including some under 18. An athlete account is expected to be set
+          up with the knowledge and consent of a parent or guardian, arranged through the athlete's coach or team (for example,
+          many teams collect that consent as part of enrolling in the program itself, outside of this app). A parent or guardian
+          who wants to review, correct, or delete their child's information can contact us at{" "}
+          <a className="text-accent underline" href="mailto:markbaseball2325@gmail.com">markbaseball2325@gmail.com</a>, or contact
+          their child's coach directly.
+        </p>
+        <p className={p}>
+          <span className="text-primary font-medium">This section in particular should be reviewed by a lawyer</span> — laws
+          protecting children's data (for example, COPPA in the U.S. for children under 13, and various state student-athlete
+          data laws) can require specific consent processes depending on how old the athletes are and how the team is run.
+        </p>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">7. Children's Privacy (Under 13)</h2>
-            <p>
-              The Service is not directed to children under 13, and we do not knowingly collect personal information
-              directly from a child under 13 without verifiable parental consent. An athlete account for a user under
-              13 must be created and managed by a parent, legal guardian, or coach acting with a parent or guardian's
-              consent; the parent or guardian may review, correct, or request deletion of that child's information at
-              any time by contacting us at the email below. If we learn that a child under 13 has provided personal
-              information to us directly without appropriate consent, we will delete it.
-            </p>
-          </section>
+        <h2 className={h2}>Data Retention</h2>
+        <p className={p}>
+          We keep account and training data for as long as the account is active, so coaches and athletes can see training
+          history over time. If you'd like your account and its data deleted, contact us at the email above and we'll remove it,
+          other than what we're legally required to keep.
+        </p>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">8. Minors 13–17 / Athlete Data</h2>
-            <p>
-              For athletes between 13 and 17, Snowy's Performance is intended to be used under the supervision of a
-              coach or team and with the consent of a parent or legal guardian. Coaches are responsible for ensuring
-              appropriate consent is in place before adding a minor athlete's information to the Service. Parents or
-              guardians who wish to review, correct, or request deletion of a minor athlete's data may contact us
-              directly.
-            </p>
-          </section>
+        <h2 className={h2}>Security</h2>
+        <p className={p}>
+          Passwords are stored as one-way hashes, not as plain text. Data is transmitted over encrypted (HTTPS) connections. No
+          system is perfectly secure, but we take reasonable steps to protect your information.
+        </p>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">9. Your Privacy Rights</h2>
-            <p className="mb-2">
-              <span className="text-primary font-medium">California residents:</span> you have the right to know the
-              categories and specific pieces of personal information we have collected about you; know the
-              categories of sources, purposes, and third parties with whom we share information; request deletion or
-              correction of your personal information; opt out of the "sale" or "sharing" of personal information
-              (we do not sell or share personal information for cross-context behavioral advertising); and not be
-              discriminated against for exercising these rights.
-            </p>
-            <p>
-              <span className="text-primary font-medium">Residents of other U.S. states</span> with comprehensive
-              privacy laws (such as Virginia, Colorado, Connecticut, and others) may have similar rights to access,
-              correct, delete, and obtain a copy of their personal information, and to opt out of certain processing.
-              To exercise any of these rights, contact us at the email below; we will take reasonable steps to
-              verify your request before responding.
-            </p>
-          </section>
+        <h2 className={h2}>Your Rights</h2>
+        <p className={p}>
+          You can ask us to access, correct, or delete your personal information at any time by emailing{" "}
+          <a className="text-accent underline" href="mailto:markbaseball2325@gmail.com">markbaseball2325@gmail.com</a>. If you're
+          an athlete, your coach may also be able to help with changes to your training data directly in the app.
+        </p>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">10. Do Not Track</h2>
-            <p>
-              Some browsers offer a "Do Not Track" signal. Because there is no common industry standard for
-              responding to these signals, the Service does not currently respond to them.
-            </p>
-          </section>
+        <h2 className={h2}>Changes to This Policy</h2>
+        <p className={p}>
+          If this policy changes in a meaningful way, we'll update the date at the top of this page. Continuing to use the app
+          after a change means you accept the updated policy.
+        </p>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">11. International Users</h2>
-            <p>
-              The Service is hosted in the United States and intended for users located in the United States. If you
-              access the Service from outside the United States, you understand that your information will be
-              transferred to and processed in the United States.
-            </p>
-          </section>
+        <h2 className={h2}>Contact</h2>
+        <p className={p}>
+          Questions about this policy or your data:{" "}
+          <a className="text-accent underline" href="mailto:markbaseball2325@gmail.com">markbaseball2325@gmail.com</a>
+        </p>
 
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">12. Cookies &amp; Tracking</h2>
-            <p>
-              The Service uses minimal, necessary technical storage (such as keeping you signed in) to function. We
-              do not use third-party advertising trackers.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">13. Security Incident Notification</h2>
-            <p>
-              If we discover a security breach that affects your personal information, we will notify you and take
-              appropriate steps in accordance with applicable law.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">14. Changes to This Policy</h2>
-            <p>
-              We may update this Privacy Policy from time to time. We will update the "Effective date" above when
-              changes are made. Continued use of the Service after changes are posted constitutes acceptance of the
-              revised policy.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-primary font-semibold text-base mb-2">15. Contact</h2>
-            <p>
-              Questions about this Privacy Policy, or requests to access, correct, or delete your data, can be sent
-              to{" "}
-              <a className="underline text-accent" href="mailto:markbaseball2325@gmail.com">
-                markbaseball2325@gmail.com
-              </a>
-              .
-            </p>
-          </section>
+        <div className="mt-10 pt-6 border-t border-edgesoft flex gap-4 text-sm">
+          <Link className="text-accent underline" href="/terms">Terms &amp; Conditions</Link>
+          <Link className="text-accent underline" href="/login">Back to sign in</Link>
         </div>
       </div>
     </div>
