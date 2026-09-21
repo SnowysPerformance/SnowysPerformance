@@ -22,6 +22,14 @@ export default function SettingsPage() {
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
 
+  // ---- WHOOP (athlete only) ----
+  const [whoopConnected, setWhoopConnected] = useState(false);
+  const [whoopConnectedAt, setWhoopConnectedAt] = useState<string | null>(null);
+  const [whoopLoading, setWhoopLoading] = useState(true);
+  const [whoopBusy, setWhoopBusy] = useState(false);
+  const [whoopError, setWhoopError] = useState("");
+  const [whoopNotice, setWhoopNotice] = useState("");
+
   // ---- Teams (coach only) ----
   const [teams, setTeams] = useState<any[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
@@ -66,6 +74,65 @@ export default function SettingsPage() {
     loadCoaches();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCoach]);
+
+  function loadWhoopStatus() {
+    setWhoopLoading(true);
+    api("/api/integrations/whoop/status")
+      .then((s) => {
+        setWhoopConnected(!!s.connected);
+        setWhoopConnectedAt(s.connectedAt || null);
+      })
+      .catch((err) => setWhoopError(err.message))
+      .finally(() => setWhoopLoading(false));
+  }
+
+  useEffect(() => {
+    if (isCoach) return;
+    loadWhoopStatus();
+
+    // After WHOOP sends the athlete's browser back here, show whether linking worked.
+    const params = new URLSearchParams(window.location.search);
+    const whoopStatus = params.get("whoop");
+    if (whoopStatus === "connected") {
+      setWhoopNotice("WHOOP connected! Your recovery and strain data will start showing up shortly.");
+    } else if (whoopStatus === "error") {
+      setWhoopError("Couldn't connect WHOOP (" + (params.get("whoop_message") || "please try again") + ").");
+    }
+    if (whoopStatus) {
+      params.delete("whoop");
+      params.delete("whoop_message");
+      const rest = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (rest ? `?${rest}` : ""));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCoach]);
+
+  async function connectWhoop() {
+    setWhoopError("");
+    setWhoopBusy(true);
+    try {
+      const { url } = await api("/api/integrations/whoop/authorize");
+      window.location.href = url;
+    } catch (err: any) {
+      setWhoopError(err.message);
+      setWhoopBusy(false);
+    }
+  }
+
+  async function disconnectWhoop() {
+    setWhoopError("");
+    setWhoopBusy(true);
+    try {
+      await api("/api/integrations/whoop", { method: "DELETE" });
+      setWhoopConnected(false);
+      setWhoopConnectedAt(null);
+      setWhoopNotice("");
+    } catch (err: any) {
+      setWhoopError(err.message);
+    } finally {
+      setWhoopBusy(false);
+    }
+  }
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -212,6 +279,53 @@ export default function SettingsPage() {
           {passwordSaving ? "Saving…" : "Change Password"}
         </button>
       </form>
+
+      {!isCoach && (
+        <div className="bg-surface border border-edge rounded-lg p-4 space-y-3">
+          <div className="font-display text-sm uppercase tracking-wide text-muted">WHOOP</div>
+          {whoopError && <div className="text-red-400 text-sm">{whoopError}</div>}
+          {whoopNotice && <div className="text-good text-sm">{whoopNotice}</div>}
+          {whoopLoading ? (
+            <p className="text-faint text-sm">Loading…</p>
+          ) : whoopConnected ? (
+            <>
+              <div className="flex items-center justify-between bg-void border border-edgesoft rounded px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">Connected</div>
+                  {whoopConnectedAt && (
+                    <div className="text-[11px] text-faint">
+                      Since {new Date(whoopConnectedAt).toLocaleDateString()}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={disconnectWhoop}
+                  disabled={whoopBusy}
+                  className="text-xs bg-raised hover:bg-edgesoft rounded px-3 py-1.5 flex-shrink-0 transition-colors disabled:opacity-40"
+                >
+                  {whoopBusy ? "Disconnecting…" : "Disconnect"}
+                </button>
+              </div>
+              <p className="text-xs text-faint">
+                Your recovery, strain, and sleep data will sync in automatically and show up on your Progress page.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-faint">
+                Connect your WHOOP account to bring your recovery, strain, and sleep data into your Progress page.
+              </p>
+              <button
+                onClick={connectWhoop}
+                disabled={whoopBusy}
+                className="bg-accent text-accenttext font-semibold rounded px-4 py-2 hover:bg-accentstrong transition-colors disabled:opacity-40"
+              >
+                {whoopBusy ? "Connecting…" : "Connect WHOOP"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {isCoach && (
         <div className="bg-surface border border-edge rounded-lg p-4 space-y-3">
