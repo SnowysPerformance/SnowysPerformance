@@ -72,6 +72,31 @@ async function backfillPersonalRecords() {
   }
 }
 
-Promise.all([ensurePlatformAdmin(), backfillPersonalRecords()]).finally(() => {
+// One-time-per-coach backfill: TeamMembership is brand new, so every coach
+// created before multi-team support shipped doesn't have a membership row
+// for their own team yet — add one from their current User fields so they
+// show up correctly in their own team switcher. Upsert makes this cheap
+// and safe to run on every boot: it's a no-op for any coach who already
+// has the row (everyone created after this shipped gets it written
+// directly, in acceptInvite/createTeam).
+async function backfillTeamMemberships() {
+  try {
+    const coaches = await prisma.user.findMany({
+      where: { role: "COACH" },
+      select: { id: true, teamId: true, isHeadCoach: true, accessLevel: true },
+    });
+    for (const c of coaches) {
+      await prisma.teamMembership.upsert({
+        where: { userId_teamId: { userId: c.id, teamId: c.teamId } },
+        update: {},
+        create: { userId: c.id, teamId: c.teamId, isHeadCoach: c.isHeadCoach, accessLevel: c.accessLevel },
+      });
+    }
+  } catch (err) {
+    console.error("Team membership backfill failed:", err);
+  }
+}
+
+Promise.all([ensurePlatformAdmin(), backfillPersonalRecords(), backfillTeamMemberships()]).finally(() => {
   app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
 });
