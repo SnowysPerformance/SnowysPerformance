@@ -176,6 +176,10 @@ model ProgramExercise {
   mode          String  @default("percent")
   sets          Int?
   reps          Int?
+  // Prescribed duration for one set of a timed/sprint exercise, in seconds
+  // (e.g. a 30s plank hold) — set by the coach when programming, separate
+  // from the athlete's actual logged time in WorkoutLog.
+  duration      Int?
   percentOfMax  Float?
   weight        Float?
   // Optional per-set overrides, e.g. a ramping/wave-loading scheme where each
