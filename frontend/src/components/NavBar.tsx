@@ -9,6 +9,7 @@ const coachLinks = [
   { href: "/dashboard/athletes", label: "Athletes" },
   { href: "/dashboard/programs", label: "Programs" },
   { href: "/dashboard/library", label: "Library" },
+  { href: "/dashboard/fatigue", label: "Team Fatigue" },
   { href: "/dashboard/settings", label: "Settings" },
 ];
 
@@ -16,7 +17,7 @@ const athleteLinks = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/programs", label: "Your Plans" },
   { href: "/dashboard/workouts", label: "Log" },
-  { href: "/dashboard/fatigue", label: "Progress" },
+  { href: "/dashboard/progress", label: "Progress" },
   { href: "/dashboard/tests", label: "Testing" },
   { href: "/dashboard/messages", label: "Messages" },
   { href: "/dashboard/settings", label: "Settings" },
