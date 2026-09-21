@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api, saveSession, updateStoredUser } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -437,6 +438,11 @@ export default function SettingsPage() {
           )}
         </div>
       )}
+
+      <div className="text-xs text-faint flex gap-4">
+        <Link className="underline hover:text-muted" href="/terms">Terms &amp; Conditions</Link>
+        <Link className="underline hover:text-muted" href="/privacy">Privacy Policy</Link>
+      </div>
     </div>
   );
 }
