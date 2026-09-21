@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { TEST_PRESETS } from "@/lib/testPresets";
 import { computePRs } from "@/lib/prs";
+import { computeBestE1rm, computedWeight, targetLabel, computedWeightForSet, setTargetLabel, hasSetDetails } from "@/lib/planTargets";
 
 type SetRow = { weight: string; reps: string; duration: string };
 
@@ -63,6 +64,20 @@ function WorkoutsPageInner() {
   // PR the instant it comes back, not just once History re-renders.
   const [bests, setBests] = useState<any[]>([]);
   const [prBanner, setPrBanner] = useState("");
+  const [error, setError] = useState("");
+
+  // "Log this day" / "Log this" on a plan sends the athlete here with
+  // ?programId=&dayId= — when present, the whole day's plan loads below and
+  // every exercise gets its own editable, pre-filled logging card, instead
+  // of the single generic form further down.
+  const programIdParam = searchParams.get("programId");
+  const dayIdParam = searchParams.get("dayId");
+  const dayMode = !!(programIdParam && dayIdParam);
+  const [dayPlanLabel, setDayPlanLabel] = useState("");
+  const [dayExercises, setDayExercises] = useState<any[] | null>(null);
+  const [dayRows, setDayRows] = useState<Record<string, SetRow[]>>({});
+  const [dayRowsInitialized, setDayRowsInitialized] = useState(false);
+  const [loggedExerciseIds, setLoggedExerciseIds] = useState<Set<string>>(new Set());
 
   const inputClass = "bg-inputbg border border-edge rounded px-2 py-2 text-sm placeholder-faint focus:border-accent outline-none w-full";
   const tinyCheck = "flex items-center gap-1.5 text-xs text-faint whitespace-nowrap";
@@ -128,6 +143,72 @@ function WorkoutsPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId, user]);
 
+  // Day mode: fetch the whole plan and pull out just the one day's
+  // exercises. The athlete is already allowed to view any program they're
+  // assigned to, so this reuses the same endpoint the plan page itself
+  // uses — no new backend route needed.
+  useEffect(() => {
+    if (!dayMode) return;
+    (async () => {
+      try {
+        const program = await api(`/api/programs/${programIdParam}`);
+        let foundDay: any = null;
+        let weekStart: string | null = null;
+        for (const ph of program.phases || []) {
+          for (const w of ph.microcycles || []) {
+            const match = (w.days || []).find((d: any) => d.id === dayIdParam);
+            if (match) {
+              foundDay = match;
+              weekStart = w.startDate;
+            }
+          }
+        }
+        if (!foundDay) {
+          setError("Couldn't find that day in your plan — it may have been changed or removed.");
+          return;
+        }
+        setDayPlanLabel(foundDay.label || "Workout");
+        setDayExercises(foundDay.exercises || []);
+        if (weekStart) {
+          const d = new Date(new Date(weekStart).getTime() + foundDay.dayOfWeek * 24 * 60 * 60 * 1000);
+          setDate(d.toISOString().slice(0, 10));
+        }
+      } catch (err: any) {
+        setError(err.message || "Couldn't load that day");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayMode, programIdParam, dayIdParam]);
+
+  // Once the day's exercises AND the athlete's logged history (needed to
+  // compute e1RMs) are both in, build the starting rows — one per
+  // prescribed set, pre-filled with the suggested weight/reps — but only
+  // once, so a later logs refresh (after saving one exercise) doesn't wipe
+  // out edits made to the others.
+  useEffect(() => {
+    if (!dayMode || !dayExercises || dayRowsInitialized) return;
+    const best = computeBestE1rm(logs);
+    const initial: Record<string, SetRow[]> = {};
+    dayExercises.forEach((ex: any) => {
+      if (hasSetDetails(ex)) {
+        initial[ex.id] = ex.setDetails.map((s: any) => {
+          const w = computedWeightForSet(ex, s, best);
+          return { weight: w != null ? String(w) : "", reps: String(s.reps || ex.reps || ""), duration: "" };
+        });
+      } else {
+        const n = Math.max(1, Number(ex.sets) || 1);
+        const w = computedWeight(ex, best);
+        initial[ex.id] = Array.from({ length: n }, () => ({
+          weight: ex.type === "weighted" && w != null ? String(w) : "",
+          reps: String(ex.reps || ""),
+          duration: "",
+        }));
+      }
+    });
+    setDayRows(initial);
+    setDayRowsInitialized(true);
+  }, [dayMode, dayExercises, logs, dayRowsInitialized]);
+
   async function loadLogs() {
     const data = await api("/api/workouts" + (athleteId ? `?athleteId=${athleteId}` : ""));
     setLogs(data);
@@ -168,6 +249,65 @@ function WorkoutsPageInner() {
     setIsWarmup(false);
     setSets([{ weight: "", reps: "", duration: "" }]);
     setLabel("");
+  }
+
+  function updateDayRow(exId: string, i: number, field: keyof SetRow, value: string) {
+    setDayRows((r) => ({ ...r, [exId]: (r[exId] || []).map((row, idx) => (idx === i ? { ...row, [field]: value } : row)) }));
+  }
+  function addDayRow(exId: string) {
+    setDayRows((r) => ({ ...r, [exId]: [...(r[exId] || []), { weight: "", reps: "", duration: "" }] }));
+  }
+  function removeDayRow(exId: string, i: number) {
+    setDayRows((r) => ({ ...r, [exId]: (r[exId] || []).filter((_, idx) => idx !== i) }));
+  }
+
+  // Saves one exercise from the day view — same shape as submitWorkout, but
+  // scoped to a single prescribed exercise so the athlete can log each one
+  // as they finish it instead of the whole session at once.
+  async function saveDayExercise(ex: any) {
+    const rows = dayRows[ex.id] || [];
+    let cleanSets: any[] = [];
+    if (ex.type === "weighted") cleanSets = rows.filter((s) => Number(s.weight) > 0 && Number(s.reps) > 0).map((s) => ({ weight: Number(s.weight), reps: Number(s.reps) }));
+    else if (ex.type === "bodyweight" || ex.type === "banded") cleanSets = rows.filter((s) => Number(s.reps) > 0).map((s) => ({ reps: Number(s.reps) }));
+    else cleanSets = rows.filter((s) => Number(s.duration) > 0).map((s) => ({ duration: Number(s.duration) }));
+    if (cleanSets.length === 0) {
+      setError(`Fill in at least one set for ${ex.exerciseName} before saving.`);
+      return;
+    }
+    try {
+      const saved = await api("/api/workouts", {
+        method: "POST",
+        body: JSON.stringify({
+          athleteId: athleteId || undefined,
+          date,
+          exerciseName: ex.exerciseName,
+          type: ex.type,
+          methodName: ex.methodName || undefined,
+          band: ex.type === "banded" ? ex.band : undefined,
+          distance: ex.type === "sprint" ? ex.distance : undefined,
+          resisted: ex.type === "sprint" ? ex.resisted : undefined,
+          resistance: ex.type === "sprint" && ex.resisted ? ex.resistance : undefined,
+          restSeconds: ex.restSeconds || undefined,
+          isWarmup: !!ex.isWarmup,
+          isTest: false,
+          sets: cleanSets,
+        }),
+      });
+      setError("");
+      setLoggedExerciseIds((s) => new Set(s).add(ex.id));
+      loadLogs();
+      const canLoadBests = isAthlete || !!athleteId;
+      if (saved.isWeightPR || saved.isE1rmPR) {
+        const weightBit = saved.isWeightPR ? `${Math.round(saved.bestWeight)} lb` : "";
+        setPrBanner(`New PR on ${ex.exerciseName}!${weightBit ? ` ${weightBit}` : ""}`);
+        if (canLoadBests) loadBests();
+        setTimeout(() => setPrBanner(""), 5000);
+      } else if (saved.bestWeight !== undefined && canLoadBests) {
+        loadBests();
+      }
+    } catch (err: any) {
+      setError(err.message || `Couldn't save ${ex.exerciseName} — try again`);
+    }
   }
 
   function updateAttempt(i: number, value: string) {
@@ -284,8 +424,107 @@ function WorkoutsPageInner() {
     "text-sm font-semibold rounded px-4 py-2 transition-colors " +
     (active ? "bg-accent text-accenttext" : "bg-raised text-muted hover:text-primary");
 
+  const dayBestE1rm = computeBestE1rm(logs);
+
   return (
     <div className="space-y-8">
+      {error && (
+        <div className="bg-red-950 border border-red-800 text-red-300 text-sm rounded-lg px-4 py-2 flex items-center justify-between gap-3">
+          <span>{error}</span>
+          <button onClick={() => setError("")} className="text-red-300 hover:text-white flex-shrink-0">✕</button>
+        </div>
+      )}
+
+      {dayMode && (
+        <div>
+          <h1 className="font-display text-xl font-semibold mb-1">{dayPlanLabel || "Log Workout"}</h1>
+          <p className="text-xs text-faint mb-4">Your prescribed weight is filled in from the plan below — change it any time before saving. Log each exercise as you finish it.</p>
+          {prBanner && (
+            <p className="bg-chalk text-accenttext font-semibold text-sm rounded px-3 py-2 mb-3 max-w-2xl">{prBanner}</p>
+          )}
+          <input type="date" className={inputClass + " max-w-[160px] mb-4"} value={date} onChange={(e) => setDate(e.target.value)} />
+          {dayExercises === null && <p className="text-faint text-sm">Loading your plan…</p>}
+          <div className="space-y-3 max-w-2xl">
+            {(dayExercises || []).map((ex: any) => {
+              const isTimeBasedEx = ex.type === "timed" || ex.type === "sprint";
+              const rows = dayRows[ex.id] || [];
+              const done = loggedExerciseIds.has(ex.id);
+              if (ex.isTest) {
+                return (
+                  <div key={ex.id} className="bg-surface border border-edge rounded-lg p-3">
+                    <div className="text-sm font-semibold">
+                      {ex.exerciseName} <span className="text-[10px] bg-raised text-accent rounded px-1 ml-1">Test</span>
+                    </div>
+                    <a
+                      href={`/dashboard/workouts?exercise=${encodeURIComponent(ex.exerciseName)}&isTest=1&sets=${ex.sets || 1}`}
+                      className="text-xs text-accent underline mt-1 inline-block"
+                    >
+                      Log test result →
+                    </a>
+                  </div>
+                );
+              }
+              return (
+                <div key={ex.id} className={"bg-surface border rounded-lg p-3 " + (done ? "border-accent" : "border-edge")}>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="text-sm font-semibold flex items-center gap-1 flex-wrap">
+                      {ex.exerciseName}
+                      {ex.methodName && <span className="text-[10px] bg-raised text-faint rounded px-1">{ex.methodName}</span>}
+                      {ex.isWarmup && <span className="text-[10px] bg-raised text-faint rounded px-1">Warm-up</span>}
+                    </div>
+                    {done && <span className="text-[10px] bg-chalk text-accenttext font-bold rounded px-1.5 py-0.5 flex-shrink-0">Logged ✓</span>}
+                  </div>
+                  {ex.restSeconds && <div className="text-[11px] text-faint mb-1">Rest: {ex.restSeconds}s</div>}
+                  {ex.notes && <div className="text-[11px] text-faint italic mb-2 whitespace-pre-wrap">📝 {ex.notes}</div>}
+                  <div className="space-y-1.5">
+                    {rows.map((s, i) => {
+                      const suggested = hasSetDetails(ex)
+                        ? setTargetLabel(ex, ex.setDetails[i] || {}, dayBestE1rm)
+                        : targetLabel(ex, dayBestE1rm);
+                      return (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="text-xs text-faint w-5">{i + 1}</span>
+                          {ex.type === "weighted" && (
+                            <>
+                              <input className={inputClass} type="number" step="any" placeholder="Weight (lb)" value={s.weight} onChange={(e) => updateDayRow(ex.id, i, "weight", e.target.value)} />
+                              <input className={inputClass} type="number" step="any" placeholder="Reps" value={s.reps} onChange={(e) => updateDayRow(ex.id, i, "reps", e.target.value)} />
+                            </>
+                          )}
+                          {(ex.type === "bodyweight" || ex.type === "banded") && (
+                            <input className={inputClass} type="number" step="any" placeholder="Reps" value={s.reps} onChange={(e) => updateDayRow(ex.id, i, "reps", e.target.value)} />
+                          )}
+                          {isTimeBasedEx && (
+                            <input className={inputClass} type="number" step="any" placeholder="Seconds" value={s.duration} onChange={(e) => updateDayRow(ex.id, i, "duration", e.target.value)} />
+                          )}
+                          {ex.type === "weighted" && suggested && (
+                            <span className="text-[10px] text-faint flex-shrink-0 w-16">plan: {suggested}</span>
+                          )}
+                          {rows.length > 1 && (
+                            <button type="button" onClick={() => removeDayRow(ex.id, i)} className="text-faint hover:text-red-400 text-xs flex-shrink-0">✕</button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <button type="button" onClick={() => addDayRow(ex.id)} className="text-xs text-accent underline">+ Add set</button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => saveDayExercise(ex)}
+                    className="mt-2 bg-accent text-accenttext font-semibold text-xs rounded px-3 py-1.5 hover:bg-accentstrong transition-colors"
+                  >
+                    {done ? "Save again" : "Save this exercise"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <a href="/dashboard/workouts" className="text-xs text-accent underline mt-4 inline-block">
+            Log something else instead
+          </a>
+        </div>
+      )}
+
+      {!dayMode && (
       <div>
         <h1 className="font-display text-xl font-semibold mb-4">Log a Workout or Test</h1>
 
@@ -446,6 +685,7 @@ function WorkoutsPageInner() {
           </form>
         )}
       </div>
+      )}
 
       <div>
         <h2 className="font-display text-lg font-semibold mb-2">History</h2>
