@@ -27,7 +27,7 @@ export async function getTeamFatigue(req: Request, res: Response) {
         computeFatigue(a.id, req.user!.teamId),
         computeProgressTrend(a.id, req.user!.teamId),
       ]);
-      return { athleteId: a.id, athleteName: a.name, ...fatigue, progress };
+      return { athleteName: a.name, ...fatigue, progress };
     })
   );
   res.json(results);
