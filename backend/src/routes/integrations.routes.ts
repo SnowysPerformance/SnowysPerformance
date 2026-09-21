@@ -6,6 +6,8 @@ const router = Router();
 
 // Athlete-initiated OAuth linking (needs a logged-in athlete)
 router.get("/whoop/authorize", authenticate, ctrl.whoopAuthorizeUrl);
+router.get("/whoop/status", authenticate, ctrl.whoopStatus);
+router.delete("/whoop", authenticate, ctrl.whoopDisconnect);
 router.post("/healthkit/ingest", authenticate, ctrl.healthKitIngest);
 
 // Provider-initiated webhooks (no platform auth — these come from WHOOP/Garmin's
