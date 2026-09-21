@@ -13,6 +13,7 @@ router.post("/:id/assign", ctrl.assignProgram);
 router.delete("/:id/assign/:athleteId", ctrl.unassignProgram);
 
 router.post("/:id/phases", ctrl.addPhase);
+router.patch("/phases/:phaseId", ctrl.updatePhase);
 router.delete("/phases/:phaseId", ctrl.deletePhase);
 
 router.post("/phases/:phaseId/weeks", ctrl.addWeek);
