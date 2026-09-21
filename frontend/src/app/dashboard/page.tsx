@@ -103,7 +103,7 @@ export default function DashboardHome() {
           <div className="flex flex-wrap gap-3 mb-6">
             <QuickLink href="/dashboard/programs" title="Your Plans" sub="See what your coach has assigned" />
             <QuickLink href="/dashboard/workouts" title="Log a Workout" sub="Record today's session or a test" />
-            <QuickLink href="/dashboard/fatigue" title="Progress" sub="Charts of your lifts and trends over time" />
+            <QuickLink href="/dashboard/progress" title="Progress" sub="Charts of your lifts and trends over time" />
           </div>
 
           <div className="bg-surface border border-edge rounded-lg p-4">
