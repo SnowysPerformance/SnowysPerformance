@@ -35,6 +35,29 @@ function targetLabel(ex: any, bestE1rm: Record<string, number>): string {
   return "—";
 }
 
+// Per-set overrides: ex.setDetails, when present, is an array of
+// { reps?, percentOfMax?, weight? } — one entry per set — for a
+// ramping/wave-loading scheme where each set has its own target. These
+// mirror computedWeight/targetLabel but read one set's own values.
+function hasSetDetails(ex: any): boolean {
+  return Array.isArray(ex.setDetails) && ex.setDetails.length > 0;
+}
+function computedWeightForSet(ex: any, entry: any, bestE1rm: Record<string, number>): number | null {
+  if (ex.type && ex.type !== "weighted") return null;
+  if (entry.weight) return Number(entry.weight);
+  const max = bestE1rm[ex.exerciseName];
+  const pct = entry.percentOfMax ? Number(entry.percentOfMax) : null;
+  if (!max || !pct) return null;
+  return round5((max * pct) / 100);
+}
+function setTargetLabel(ex: any, entry: any, bestE1rm: Record<string, number>): string {
+  if (!ex.type || ex.type === "weighted") {
+    const w = computedWeightForSet(ex, entry, bestE1rm);
+    return w ? `${w} lb` : "need 1RM";
+  }
+  return targetLabel(ex, bestE1rm);
+}
+
 // HTML-escape a value before interpolating it into the printable day sheet
 // built in printDay() below — exercise names/notes are free text a coach
 // typed, so this keeps a stray "<" or "&" from breaking the print layout.
@@ -284,13 +307,23 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
 
     function exerciseRow(ex: any, letterTag?: string) {
       const isTimeBased = ex.type === "timed" || ex.type === "sprint";
-      const setsReps = `${ex.sets || "—"} x ${isTimeBased ? `${ex.duration || "—"}s` : ex.reps || "—"}`;
       const tags = [ex.methodName, ex.isWarmup ? "Warm-up" : "", ex.isTest ? "Test" : ""].filter(Boolean).join(" · ");
+      let setsRepsHtml: string;
+      let targetHtml: string;
+      if (hasSetDetails(ex)) {
+        setsRepsHtml = ex.setDetails
+          .map((s: any, i: number) => `${i + 1}. ${escapeHtml(String(s.reps || ex.reps || "—"))}`)
+          .join("<br/>");
+        targetHtml = ex.setDetails.map((s: any) => escapeHtml(setTargetLabel(ex, s, bestE1rm))).join("<br/>");
+      } else {
+        setsRepsHtml = escapeHtml(`${ex.sets || "—"} x ${isTimeBased ? `${ex.duration || "—"}s` : ex.reps || "—"}`);
+        targetHtml = escapeHtml(targetLabel(ex, bestE1rm));
+      }
       return `
         <tr>
           <td class="ex-name">${letterTag ? `<span class="letter">${escapeHtml(letterTag)}</span>` : ""}${escapeHtml(ex.exerciseName || "Exercise")}${tags ? `<div class="tags">${escapeHtml(tags)}</div>` : ""}</td>
-          <td>${escapeHtml(setsReps)}</td>
-          <td>${escapeHtml(targetLabel(ex, bestE1rm))}</td>
+          <td>${setsRepsHtml}</td>
+          <td>${targetHtml}</td>
           <td>${ex.restSeconds ? escapeHtml(`${ex.restSeconds}s`) : ""}</td>
           <td class="notes">${escapeHtml(ex.notes || "")}</td>
         </tr>`;
@@ -577,14 +610,54 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
           {ex.isWarmup && <span className="text-[10px] bg-raised text-faint rounded px-1">Warm-up</span>}
           {ex.isTest && <span className="text-[10px] bg-raised text-accent rounded px-1">Test</span>}
         </div>
-        <div className="text-[11px] text-muted mt-1">
-          {ex.sets || "?"}x{isTimeBased ? `${ex.duration || "?"}s` : ex.reps || "?"} — {targetLabel(ex, bestE1rm)}
-        </div>
+        {hasSetDetails(ex) ? (
+          <div className="text-[11px] text-muted mt-1 space-y-0.5">
+            {ex.setDetails.map((s: any, i: number) => (
+              <div key={i}>Set {i + 1}: {s.reps || ex.reps || "?"} reps — {setTargetLabel(ex, s, bestE1rm)}</div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-[11px] text-muted mt-1">
+            {ex.sets || "?"}x{isTimeBased ? `${ex.duration || "?"}s` : ex.reps || "?"} — {targetLabel(ex, bestE1rm)}
+          </div>
+        )}
         {ex.notes && <div className="text-[11px] text-faint italic mt-1 whitespace-pre-wrap">📝 {ex.notes}</div>}
         <button onClick={onLogThis} className="text-[10px] text-accent underline mt-1">Log this</button>
       </div>
     );
   }
+
+  const perSet = hasSetDetails(ex);
+  const setDetails = perSet ? ex.setDetails : [];
+
+  function toggleVaryBySet(on: boolean) {
+    if (on) {
+      const n = Number(ex.sets) || 1;
+      const rows = Array.from({ length: n }, () => ({
+        reps: ex.reps || "",
+        percentOfMax: ex.percentOfMax || "",
+        weight: ex.weight || "",
+      }));
+      onUpdate({ setDetails: rows });
+    } else {
+      onUpdate({ setDetails: null });
+    }
+  }
+  function updateSetRow(idx: number, patch: any) {
+    const rows = (ex.setDetails || []).map((r: any, i: number) => (i === idx ? { ...r, ...patch } : r));
+    onUpdate({ setDetails: rows, sets: rows.length });
+  }
+  function addSetRow() {
+    const rows = [...(ex.setDetails || [])];
+    const last = rows[rows.length - 1] || { reps: ex.reps || "", percentOfMax: ex.percentOfMax || "", weight: ex.weight || "" };
+    rows.push({ ...last });
+    onUpdate({ setDetails: rows, sets: rows.length });
+  }
+  function removeSetRow(idx: number) {
+    const rows = (ex.setDetails || []).filter((_: any, i: number) => i !== idx);
+    onUpdate({ setDetails: rows, sets: rows.length || null });
+  }
+
   return (
     <div className="bg-surface border border-edgesoft rounded p-2 space-y-1">
       <div className="flex items-center gap-1">
@@ -628,18 +701,51 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
       </select>
       {ex.type === "banded" && <input className={inputClass} placeholder="Band" value={ex.band || ""} onChange={(e) => onUpdate({ band: e.target.value })} />}
       {ex.type === "sprint" && <input className={inputClass} placeholder="Distance (yd)" value={ex.distance || ""} onChange={(e) => onUpdate({ distance: e.target.value })} />}
-      <div className="flex gap-1">
-        <input className={inputClass} type="number" placeholder="Sets" value={ex.sets || ""} onChange={(e) => onUpdate({ sets: e.target.value })} />
-        {!isTimeBased && <input className={inputClass} type="number" placeholder="Reps" value={ex.reps || ""} onChange={(e) => onUpdate({ reps: e.target.value })} />}
-      </div>
-      {ex.type === "weighted" && (
-        <div className="flex gap-1 items-center">
-          <input className={inputClass} type="number" placeholder="%1RM" value={ex.percentOfMax || ""} onChange={(e) => onUpdate({ percentOfMax: e.target.value })} />
-          <span className="text-[10px] text-faint flex-shrink-0">or</span>
-          <input className={inputClass} type="number" placeholder="Exact weight" value={ex.weight || ""} onChange={(e) => onUpdate({ weight: e.target.value })} />
+      <label className="flex items-center gap-1 text-[10px] text-faint">
+        <input type="checkbox" checked={perSet} onChange={(e) => toggleVaryBySet(e.target.checked)} />
+        Vary by set (ramping/wave loading)
+      </label>
+      {!perSet && (
+        <>
+          <div className="flex gap-1">
+            <input className={inputClass} type="number" placeholder="Sets" value={ex.sets || ""} onChange={(e) => onUpdate({ sets: e.target.value })} />
+            {!isTimeBased && <input className={inputClass} type="number" placeholder="Reps" value={ex.reps || ""} onChange={(e) => onUpdate({ reps: e.target.value })} />}
+          </div>
+          {ex.type === "weighted" && (
+            <div className="flex gap-1 items-center">
+              <input className={inputClass} type="number" placeholder="%1RM" value={ex.percentOfMax || ""} onChange={(e) => onUpdate({ percentOfMax: e.target.value })} />
+              <span className="text-[10px] text-faint flex-shrink-0">or</span>
+              <input className={inputClass} type="number" placeholder="Exact weight" value={ex.weight || ""} onChange={(e) => onUpdate({ weight: e.target.value })} />
+            </div>
+          )}
+          {ex.type === "weighted" && <div className="text-[11px] bg-chalksoft text-chalk rounded px-2 py-1 text-center" style={{ background: "rgba(227,178,60,0.16)", color: "#E3B23C" }}>{targetLabel(ex, bestE1rm)}</div>}
+        </>
+      )}
+      {perSet && (
+        <div className="space-y-1 bg-void border border-edgesoft rounded p-1.5">
+          {setDetails.map((s: any, i: number) => (
+            <div key={i} className="flex gap-1 items-center">
+              <span className="text-[9px] text-faint w-3 flex-shrink-0">{i + 1}</span>
+              {!isTimeBased && (
+                <input className={inputClass} type="number" placeholder="Reps" value={s.reps || ""} onChange={(e) => updateSetRow(i, { reps: e.target.value })} />
+              )}
+              {ex.type === "weighted" && (
+                <>
+                  <input className={inputClass} type="number" placeholder="%1RM" value={s.percentOfMax || ""} onChange={(e) => updateSetRow(i, { percentOfMax: e.target.value })} />
+                  <input className={inputClass} type="number" placeholder="lb" value={s.weight || ""} onChange={(e) => updateSetRow(i, { weight: e.target.value })} />
+                </>
+              )}
+              <button onClick={() => removeSetRow(i)} className="text-faint hover:text-red-400 text-xs flex-shrink-0" title="Remove set">✕</button>
+            </div>
+          ))}
+          <button onClick={addSetRow} className="text-[10px] text-accent underline">+ Add set</button>
+          {ex.type === "weighted" && setDetails.length > 0 && (
+            <div className="text-[10px] text-faint bg-chalksoft text-chalk rounded px-2 py-1" style={{ background: "rgba(227,178,60,0.16)", color: "#E3B23C" }}>
+              {setDetails.map((s: any) => setTargetLabel(ex, s, bestE1rm)).join(" · ")}
+            </div>
+          )}
         </div>
       )}
-      {ex.type === "weighted" && <div className="text-[11px] bg-chalksoft text-chalk rounded px-2 py-1 text-center" style={{ background: "rgba(227,178,60,0.16)", color: "#E3B23C" }}>{targetLabel(ex, bestE1rm)}</div>}
       <div className="flex gap-2 items-center flex-wrap text-[10px] text-faint">
         <label className="flex items-center gap-1"><input type="checkbox" checked={ex.isWarmup} onChange={(e) => onUpdate({ isWarmup: e.target.checked })} /> Warm-up</label>
         <label className="flex items-center gap-1 text-accent"><input type="checkbox" checked={ex.isTest} onChange={(e) => onUpdate({ isTest: e.target.checked })} /> Test</label>
