@@ -50,6 +50,15 @@ export default function LoginPage() {
             Register
           </Link>
         </p>
+        <p className="text-xs text-faint text-center">
+          <Link className="underline" href="/terms">
+            Terms
+          </Link>{" "}
+          ·{" "}
+          <Link className="underline" href="/privacy">
+            Privacy Policy
+          </Link>
+        </p>
       </form>
     </div>
   );
