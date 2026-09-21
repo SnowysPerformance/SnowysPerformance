@@ -35,6 +35,13 @@ function targetLabel(ex: any, bestE1rm: Record<string, number>): string {
   return "—";
 }
 
+// HTML-escape a value before interpolating it into the printable day sheet
+// built in printDay() below — exercise names/notes are free text a coach
+// typed, so this keeps a stray "<" or "&" from breaking the print layout.
+function escapeHtml(s: any): string {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+}
+
 const inputClass = "bg-inputbg border border-edge rounded px-2 py-1.5 text-xs placeholder-faint focus:border-accent outline-none w-full";
 
 // deep-update a single exercise inside the nested program tree, keeping every
@@ -266,6 +273,93 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
     });
   }
 
+  // Opens a separate window with just one day's exercises, formatted as a
+  // clean printable sheet (team name, exercise/sets-reps/target/rest/notes),
+  // and triggers the browser's print dialog on it. Kept as its own window
+  // rather than @media print CSS on this page so the phase/week picker,
+  // nav bar, and every other day don't end up on the page too.
+  function printDay(day: any, weekLabel: string, dayDateLabel: string | null) {
+    const blocks = buildBlocks(day);
+    const teamName = program.team?.name || "";
+
+    function exerciseRow(ex: any, letterTag?: string) {
+      const isTimeBased = ex.type === "timed" || ex.type === "sprint";
+      const setsReps = `${ex.sets || "—"} x ${isTimeBased ? `${ex.duration || "—"}s` : ex.reps || "—"}`;
+      const tags = [ex.methodName, ex.isWarmup ? "Warm-up" : "", ex.isTest ? "Test" : ""].filter(Boolean).join(" · ");
+      return `
+        <tr>
+          <td class="ex-name">${letterTag ? `<span class="letter">${escapeHtml(letterTag)}</span>` : ""}${escapeHtml(ex.exerciseName || "Exercise")}${tags ? `<div class="tags">${escapeHtml(tags)}</div>` : ""}</td>
+          <td>${escapeHtml(setsReps)}</td>
+          <td>${escapeHtml(targetLabel(ex, bestE1rm))}</td>
+          <td>${ex.restSeconds ? escapeHtml(`${ex.restSeconds}s`) : ""}</td>
+          <td class="notes">${escapeHtml(ex.notes || "")}</td>
+        </tr>`;
+    }
+
+    const rows = blocks.length
+      ? blocks
+          .map((b: any) =>
+            b.type === "single"
+              ? exerciseRow(b.ex)
+              : `<tr><td colspan="5" class="group-label">${escapeHtml(b.label)}${b.label && b.groupLabel ? " — " : ""}${escapeHtml(b.groupLabel || "")}</td></tr>` +
+                b.members.map((m: any, i: number) => exerciseRow(m, `${b.letter}${i + 1}`)).join("")
+          )
+          .join("")
+      : `<tr><td colspan="5" class="rest">Rest day</td></tr>`;
+
+    const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(program.name)} — ${escapeHtml(day.label)}</title>
+<style>
+  body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #111; margin: 0; padding: 32px; }
+  .header { border-bottom: 3px solid #111; padding-bottom: 12px; margin-bottom: 18px; }
+  .team { font-size: 22px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+  .program { font-size: 14px; color: #444; margin-top: 4px; }
+  .meta { font-size: 15px; font-weight: 700; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: #666; border-bottom: 2px solid #111; padding: 6px 8px; }
+  td { border-bottom: 1px solid #ddd; padding: 8px; font-size: 13px; vertical-align: top; }
+  .ex-name { font-weight: 600; min-width: 140px; }
+  .letter { display: inline-block; width: 18px; color: #666; font-weight: 700; }
+  .tags { font-size: 10px; color: #888; font-weight: 400; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .group-label { font-weight: 700; font-size: 12px; text-transform: uppercase; color: #333; padding-top: 16px; border-bottom: none; }
+  .notes { color: #444; font-style: italic; white-space: pre-wrap; }
+  .rest { text-align: center; color: #888; font-style: italic; padding: 24px 8px; }
+  .footer { margin-top: 36px; font-size: 11px; color: #999; text-align: center; }
+  @media print { body { padding: 12px; } }
+</style>
+</head>
+<body>
+  <div class="header">
+    ${teamName ? `<div class="team">${escapeHtml(teamName)}</div>` : ""}
+    <div class="program">${escapeHtml(program.name)}${phase ? ` · ${escapeHtml(phase.name)}` : ""}${weekLabel ? ` · ${escapeHtml(weekLabel)}` : ""}</div>
+    <div class="meta">${escapeHtml(day.label)}${dayDateLabel ? ` — ${escapeHtml(dayDateLabel)}` : ""}</div>
+  </div>
+  <table>
+    <thead><tr><th>Exercise</th><th>Sets x Reps</th><th>Target</th><th>Rest</th><th>Notes</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="footer">Snowy's Performance</div>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank", "width=850,height=1100");
+    if (!w) {
+      setError("Your browser blocked the print window — allow pop-ups for this site and try again.");
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => {
+      try {
+        w.focus();
+        w.print();
+      } catch {}
+    }, 250);
+  }
+
   return (
     <div>
       {error && (
@@ -385,9 +479,14 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                 : null;
               return (
                 <div key={day.id} className="min-w-[230px] max-w-[250px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3">
-                  <div className="flex items-baseline gap-2 mb-2">
-                    <span className="font-display text-xs font-bold text-accent uppercase">{day.label}</span>
-                    {dayDate && <span className="text-[10px] text-faint">{dayDate}</span>}
+                  <div className="flex items-baseline justify-between gap-2 mb-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-display text-xs font-bold text-accent uppercase">{day.label}</span>
+                      {dayDate && <span className="text-[10px] text-faint">{dayDate}</span>}
+                    </div>
+                    {day.exercises.length > 0 && (
+                      <button onClick={() => printDay(day, week.name, dayDate)} title="Print this day" className="text-[10px] text-faint hover:text-accent flex-shrink-0">🖨 Print</button>
+                    )}
                   </div>
                   <div className="space-y-2 max-h-[420px] overflow-y-auto">
                     {day.exercises.length === 0 && <div className="text-faint text-xs text-center py-3">Rest day</div>}
