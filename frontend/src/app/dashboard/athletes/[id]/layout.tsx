@@ -18,8 +18,7 @@ export default function AthleteWorkspaceLayout({ children, params }: { children:
     { href: `${base}/log`, label: "Log" },
     { href: `${base}/progress`, label: "Progress" },
     { href: `${base}/testing`, label: "Testing" },
-    { href: `${base}/notes`, label: "Notes" },
-    { href: `${base}/messages`, label: "Messages" },
+    { href: `${base}/settings`, label: "Settings" },
   ];
 
   return (
