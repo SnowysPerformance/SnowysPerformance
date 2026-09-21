@@ -275,14 +275,18 @@ model WearableData {
 // complete that provider's OAuth flow. Webhooks arrive keyed by the
 // provider's user id, so this table is what lets us attribute that event.
 model WearableAccountLink {
-  id              String         @id @default(uuid())
-  athleteId       String
-  athlete         User           @relation(fields: [athleteId], references: [id], onDelete: Cascade)
-  source          WearableSource
-  externalUserId  String
-  accessToken     String?
-  refreshToken    String?
-  createdAt       DateTime       @default(now())
+  id                   String         @id @default(uuid())
+  athleteId            String
+  athlete              User           @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  source               WearableSource
+  externalUserId       String
+  accessToken          String?
+  refreshToken         String?
+  // When accessToken stops being valid â used to decide whether to refresh
+  // it before calling the provider's API (see getValidAccessToken in
+  // integrations.controller.ts). Null for providers without token expiry.
+  accessTokenExpiresAt DateTime?
+  createdAt            DateTime       @default(now())
 
   @@unique([source, externalUserId])
 }
