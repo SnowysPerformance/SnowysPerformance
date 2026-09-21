@@ -6,8 +6,11 @@ export interface FatigueResult {
   chronicLoad: number;
   acwr: number | null;
   recoveryAvg7d: number | null;
+  recoveryTrend: "IMPROVING" | "DECLINING" | "STABLE" | null;
   flag: "INSUFFICIENT_DATA" | "UNDERTRAINING" | "OPTIMAL" | "ELEVATED_RISK" | "HIGH_RISK";
   message: string;
+  deloadRecommended: boolean;
+  deloadReason: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -20,8 +23,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * (see Gabbett, 2016, "The training-injury prevention paradox").
  *
  * Wearable recovery (from WHOOP/HealthKit/Garmin, when connected) refines
- * the flag: a rising ACWR paired with poor recovery is a stronger signal
- * than either alone.
+ * the flag: a rising ACWR paired with poor or *declining* recovery is a
+ * stronger signal than either alone — declining recovery over the past
+ * week is often the earliest warning sign, before ACWR itself looks bad.
  *
  * This is intentionally simple and inspectable so a coach can trust *why*
  * a flag fired. Swap in a trained model later by replacing the body of
@@ -43,8 +47,11 @@ export async function computeFatigue(athleteId: string, teamId: string): Promise
       chronicLoad: 0,
       acwr: null,
       recoveryAvg7d: null,
+      recoveryTrend: null,
       flag: "INSUFFICIENT_DATA",
       message: "Not enough logged training data in the last 28 days to compute a fatigue score.",
+      deloadRecommended: false,
+      deloadReason: null,
     };
   }
 
@@ -65,8 +72,11 @@ export async function computeFatigue(athleteId: string, teamId: string): Promise
       chronicLoad: 0,
       acwr: null,
       recoveryAvg7d: null,
+      recoveryTrend: null,
       flag: "INSUFFICIENT_DATA",
       message: `Still building a training history (${Math.max(1, Math.round(daysOfHistory))} of ${MIN_HISTORY_DAYS} days) before a fatigue trend can be calculated reliably.`,
+      deloadRecommended: false,
+      deloadReason: null,
     };
   }
 
@@ -81,14 +91,39 @@ export async function computeFatigue(athleteId: string, teamId: string): Promise
 
   const acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
 
-  const wearable = await prisma.wearableData.findMany({
-    where: { athleteId, teamId, date: { gte: since7 } },
-    select: { recovery: true },
+  // Recovery: look back 14 days so we can compare "this week" vs "last week"
+  // and catch a downward trend even before the 7-day average itself looks
+  // low — that's the earliest warning sign a deload may be needed soon.
+  const since14 = new Date(now.getTime() - 14 * DAY_MS);
+  const wearable14 = await prisma.wearableData.findMany({
+    where: { athleteId, teamId, date: { gte: since14 } },
+    select: { date: true, recovery: true },
   });
-  const recoveryValues = wearable.map((w) => w.recovery).filter((v): v is number => v !== null && v !== undefined);
-  const recoveryAvg7d = recoveryValues.length
-    ? recoveryValues.reduce((s, v) => s + v, 0) / recoveryValues.length
+  const thisWeekRecovery = wearable14
+    .filter((w) => w.date >= since7)
+    .map((w) => w.recovery)
+    .filter((v): v is number => v !== null && v !== undefined);
+  const lastWeekRecovery = wearable14
+    .filter((w) => w.date < since7)
+    .map((w) => w.recovery)
+    .filter((v): v is number => v !== null && v !== undefined);
+
+  const recoveryAvg7d = thisWeekRecovery.length
+    ? thisWeekRecovery.reduce((s, v) => s + v, 0) / thisWeekRecovery.length
     : null;
+  const recoveryAvgPrior7d = lastWeekRecovery.length
+    ? lastWeekRecovery.reduce((s, v) => s + v, 0) / lastWeekRecovery.length
+    : null;
+
+  let recoveryTrend: FatigueResult["recoveryTrend"] = null;
+  if (recoveryAvg7d !== null && recoveryAvgPrior7d !== null) {
+    const delta = recoveryAvg7d - recoveryAvgPrior7d;
+    // A ~5-point swing in WHOOP-style 0-100 recovery is generally considered
+    // a meaningful change rather than day-to-day noise.
+    if (delta <= -5) recoveryTrend = "DECLINING";
+    else if (delta >= 5) recoveryTrend = "IMPROVING";
+    else recoveryTrend = "STABLE";
+  }
 
   let flag: FatigueResult["flag"] = "OPTIMAL";
   let message = "Training load looks balanced.";
@@ -112,13 +147,37 @@ export async function computeFatigue(athleteId: string, teamId: string): Promise
     message = "Low wearable recovery combined with rising training load — a strong overtraining signal. Recommend a recovery day.";
   }
 
+  // Deload recommendation: a clearer, coach-facing call than the raw flag
+  // above. It fires on the same evidence, but requires *corroborating*
+  // signals (not just one borderline number) before telling a coach to
+  // actually back off an athlete's programming.
+  let deloadRecommended = false;
+  let deloadReason: string | null = null;
+
+  if (flag === "HIGH_RISK") {
+    deloadRecommended = true;
+    deloadReason =
+      recoveryAvg7d !== null && recoveryAvg7d < 33
+        ? "Training load is well above normal and wearable recovery is low — the combination most associated with overtraining."
+        : "Training load is more than 1.5x this athlete's usual — a level linked to elevated injury risk in the sports-science literature.";
+  } else if (flag === "ELEVATED_RISK" && recoveryTrend === "DECLINING") {
+    deloadRecommended = true;
+    deloadReason = "Training load is trending up while recovery has been dropping over the past week — worth easing off before it compounds.";
+  } else if (acwr !== null && acwr > 1.15 && recoveryTrend === "DECLINING" && recoveryAvg7d !== null && recoveryAvg7d < 45) {
+    deloadRecommended = true;
+    deloadReason = "Recovery has been declining for a week and is now on the low side, even though load hasn't spiked dramatically yet.";
+  }
+
   return {
     athleteId,
     acuteLoad: Math.round(acuteLoad),
     chronicLoad: Math.round(chronicLoad),
     acwr: acwr !== null ? Math.round(acwr * 100) / 100 : null,
     recoveryAvg7d: recoveryAvg7d !== null ? Math.round(recoveryAvg7d) : null,
+    recoveryTrend,
     flag,
     message,
+    deloadRecommended,
+    deloadReason,
   };
 }
