@@ -3,8 +3,8 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { prisma } from "../db";
 import { WearableSource } from "@prisma/client";
+import { JWT_SECRET } from "../utils/jwt";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 
 // ---------------------------------------------------------------------------
 // WHOOP  (https://developer.whoop.com)
