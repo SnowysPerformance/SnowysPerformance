@@ -91,7 +91,7 @@ export async function getInviteByToken(req: Request, res: Response) {
   });
   if (!invite || invite.usedAt || invite.expiresAt < new Date()) {
     return res.status(404).json({ error: "This invite link is invalid or has expired. Ask whoever sent it for a new one." });
-  }
+    
   res.json({
     email: invite.email,
     role: invite.role,
@@ -106,6 +106,7 @@ export async function getInviteByToken(req: Request, res: Response) {
 export async function acceptInvite(req: Request, res: Response) {
   const { token, name, password, teamName } = req.body;
   if (!token || !name || !password) return res.status(400).json({ error: "Missing invite token, name, or password" });
+  if (String(password).length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
 
   const invite = await prisma.invite.findUnique({ where: { token } });
   if (!invite || invite.usedAt || invite.expiresAt < new Date()) {
