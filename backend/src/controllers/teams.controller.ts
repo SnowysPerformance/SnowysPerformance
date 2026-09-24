@@ -17,10 +17,13 @@ export async function createAthlete(req: Request, res: Response) {
   if (!name || !email || !password) {
     return res.status(400).json({ error: "name, email, and password are required" });
   }
+  if (String(password).length < 6) {
+    return res.status(400).json({ error: "Password must be at least 6 characters" });
+  }
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return res.status(409).json({ error: "Email already registered" });
 
-  const passwordHash = await bcrypt.hash(password, 10);
+const passwordHash = await bcrypt.hash(password, 10);
   const athlete = await prisma.user.create({
     data: { email, passwordHash, name, role: "ATHLETE", teamId: req.user!.teamId },
     select: { id: true, name: true, email: true },
@@ -32,7 +35,7 @@ export async function createAthlete(req: Request, res: Response) {
 // edit workouts, tests, plan assignments, and the notes fields below). A
 // FULL-access coach can always edit; a RESTRICTED coach only for athletes
 // they've been explicitly granted via CoachAthleteAccess. Every coach can
-// still VIEW any athlete regardless — this only gates writes.
+// still VIEW any athlete regardless -- this only gates writes.
 async function computeCanEdit(req: Request, athleteId: string): Promise<boolean> {
   if (req.user!.role !== "COACH") return false;
   const coach = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { accessLevel: true } });
@@ -67,15 +70,20 @@ export async function getAthlete(req: Request, res: Response) {
 }
 
 // Coach edits one of their athletes: name, email (their login username), and/or
-// resets their password. Any field left out is left unchanged.
+// resets their password. Any field left out is left unchanged. Gated the
+// same way as any other edit for this athlete (see computeCanEdit) -- a
+// RESTRICTED coach can't reset the password or rename an athlete they
+// haven't been granted access to.
 export async function updateAthlete(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
   const athlete = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!athlete || athlete.teamId !== req.user!.teamId || athlete.role !== "ATHLETE") {
     return res.status(404).json({ error: "Not found" });
   }
+  const canEdit = await computeCanEdit(req, athlete.id);
+  if (!canEdit) return res.status(403).json({ error: "You don't have edit access to this athlete" });
 
-  const { name, email, password } = req.body;
+const { name, email, password } = req.body;
   const data: any = {};
   if (name !== undefined && name.trim()) data.name = name.trim();
   if (email !== undefined && email.trim() && email.trim() !== athlete.email) {
@@ -83,13 +91,18 @@ export async function updateAthlete(req: Request, res: Response) {
     if (existing) return res.status(409).json({ error: "Email already in use" });
     data.email = email.trim();
   }
-  if (password) data.passwordHash = await bcrypt.hash(password, 10);
+  if (password) {
+    if (String(password).length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+    data.passwordHash = await bcrypt.hash(password, 10);
+  }
 
-  const updated = await prisma.user.update({ where: { id: athlete.id }, data, select: { id: true, name: true, email: true } });
+const updated = await prisma.user.update({ where: { id: athlete.id }, data, select: { id: true, name: true, email: true } });
   res.json(updated);
 }
 
-// Coach-only free-text notes about an athlete — injury history, needs
+// Coach-only free-text notes about an athlete -- injury history, needs
 // analysis, archetype, and general notes. Gated the same way as any other
 // edit for this athlete (see computeCanEdit).
 export async function updateAthleteNotes(req: Request, res: Response) {
@@ -101,7 +114,7 @@ export async function updateAthleteNotes(req: Request, res: Response) {
   const canEdit = await computeCanEdit(req, athlete.id);
   if (!canEdit) return res.status(403).json({ error: "You don't have edit access to this athlete" });
 
-  const { injuryHistory, needsAnalysis, archetype, generalNotes } = req.body;
+const { injuryHistory, needsAnalysis, archetype, generalNotes } = req.body;
   const updated = await prisma.user.update({
     where: { id: athlete.id },
     data: {
@@ -116,13 +129,18 @@ export async function updateAthleteNotes(req: Request, res: Response) {
 }
 
 // Permanently removes an athlete and (via cascading foreign keys) all of
-// their workout logs, test results, and wearable data.
+// their workout logs, test results, and wearable data. Gated the same way
+// as any other edit for this athlete (see computeCanEdit) -- a RESTRICTED
+// coach can't delete an athlete they haven't been granted access to.
 export async function deleteAthlete(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
   const athlete = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!athlete || athlete.teamId !== req.user!.teamId || athlete.role !== "ATHLETE") {
     return res.status(404).json({ error: "Not found" });
   }
-  await prisma.user.delete({ where: { id: athlete.id } });
+  const canEdit = await computeCanEdit(req, athlete.id);
+  if (!canEdit) return res.status(403).json({ error: "You don't have edit access to this athlete" });
+
+await prisma.user.delete({ where: { id: athlete.id } });
   res.status(204).send();
 }
