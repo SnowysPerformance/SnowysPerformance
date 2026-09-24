@@ -1,9 +1,10 @@
 import { Router } from "express";
 import * as ctrl from "../controllers/auth.controller";
 import { authenticate } from "../middleware/auth";
+import { loginLimiter } from "../middleware/rateLimit";
 
 const router = Router();
-router.post("/login", ctrl.login);
+router.post("/login", loginLimiter, ctrl.login);
 router.get("/me", authenticate, ctrl.me);
 router.patch("/me", authenticate, ctrl.updateMe);
 router.post("/change-password", authenticate, ctrl.changePassword);
