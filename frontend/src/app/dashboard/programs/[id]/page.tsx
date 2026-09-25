@@ -102,6 +102,10 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   const [previewAthleteId, setPreviewAthleteId] = useState("");
   const [library, setLibrary] = useState<any[]>([]);
   const [dragging, setDragging] = useState<{ dayId: string; blockIdx: number } | null>(null);
+  // Full-screen "focus" view for a single week: click "Full screen" in the
+  // Days header to expand the current week to fill the page, with the
+  // client's progress pinned in a sidebar alongside it.
+  const [focusMode, setFocusMode] = useState(false);
 
   const pendingPatches = useRef<Record<string, any>>({});
   const saveTimers = useRef<Record<string, any>>({});
@@ -143,6 +147,16 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
       setBestE1rm(computeBestE1rm(logs));
     })();
   }, [program, previewAthleteId, isCoach]);
+
+  // Let Escape close the full-screen week view, same as the ✕ button.
+  useEffect(() => {
+    if (!focusMode) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setFocusMode(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusMode]);
 
   if (error && !program) return <p className="text-red-400">{error}</p>;
   if (!program) return <p className="text-faint">Loading…</p>;
@@ -524,39 +538,60 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
       )}
 
       {/* Days */}
-      {week && (
-        <div className="bg-surface border border-edge rounded-lg p-4">
+      {week && (() => {
+        const weekIdx = phase.microcycles.findIndex((w: any) => w.id === week.id);
+        const prevWeek = weekIdx > 0 ? phase.microcycles[weekIdx - 1] : null;
+        const nextWeek = weekIdx >= 0 && weekIdx < phase.microcycles.length - 1 ? phase.microcycles[weekIdx + 1] : null;
+        const effectiveAthleteId = previewAthleteId || program.assignments?.[0]?.athlete?.id;
+
+        const daysHeader = (
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <div className="font-display text-xs uppercase tracking-wide text-muted">{phase.name} · {week.name} — Day by Day</div>
-            {isCoach && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] text-faint">Week starts:</span>
-                <input
-                  type="date"
-                  className={inputClass}
-                  style={{ width: 140 }}
-                  value={week.startDate ? week.startDate.slice(0, 10) : ""}
-                  onChange={async (e) => {
-                    await guard(async () => {
-                      await api(`/api/programs/weeks/${week.id}`, { method: "PATCH", body: JSON.stringify({ startDate: e.target.value || null }) });
-                      await load();
-                    });
-                  }}
-                />
-              </div>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {focusMode && (
+                <button onClick={() => setFocusMode(false)} className="text-xs text-muted hover:text-primary border border-edge rounded px-2 py-1 flex-shrink-0">← Exit full screen</button>
+              )}
+              <div className="font-display text-xs uppercase tracking-wide text-muted">{phase.name} · {week.name} — Day by Day</div>
+              {focusMode && (
+                <div className="flex items-center gap-1">
+                  <button disabled={!prevWeek} onClick={() => prevWeek && setSelectedWeekId(prevWeek.id)} className="text-xs text-muted hover:text-primary disabled:opacity-30 disabled:hover:text-muted border border-edge rounded px-2 py-1">← Prev week</button>
+                  <button disabled={!nextWeek} onClick={() => nextWeek && setSelectedWeekId(nextWeek.id)} className="text-xs text-muted hover:text-primary disabled:opacity-30 disabled:hover:text-muted border border-edge rounded px-2 py-1">Next week →</button>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              {isCoach && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] text-faint">Week starts:</span>
+                  <input
+                    type="date"
+                    className={inputClass}
+                    style={{ width: 140 }}
+                    value={week.startDate ? week.startDate.slice(0, 10) : ""}
+                    onChange={async (e) => {
+                      await guard(async () => {
+                        await api(`/api/programs/weeks/${week.id}`, { method: "PATCH", body: JSON.stringify({ startDate: e.target.value || null }) });
+                        await load();
+                      });
+                    }}
+                  />
+                </div>
+              )}
+              {!focusMode && (
+                <button onClick={() => setFocusMode(true)} title="Expand this week to full screen" className="text-xs text-accent underline flex-shrink-0">⛶ Full screen</button>
+              )}
+            </div>
           </div>
-          {isCoach && (
-            <p className="text-[11px] text-faint mb-2">Tip: drag an exercise (or superset block) by its ⠿ handle to reorder it within the day.</p>
-          )}
-          <div className="flex gap-3 overflow-x-auto pb-2">
+        );
+
+        const daysGrid = (
+          <div className={focusMode ? "grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-4" : "flex gap-3 overflow-x-auto pb-2"}>
             {week.days.map((day: any) => {
               const blocks = buildBlocks(day);
               const dayDate = week.startDate
                 ? new Date(new Date(week.startDate).getTime() + day.dayOfWeek * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
                 : null;
               return (
-                <div key={day.id} className="min-w-[230px] max-w-[250px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3">
+                <div key={day.id} className={focusMode ? "bg-void border border-edgesoft rounded-lg p-4" : "min-w-[230px] max-w-[250px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3"}>
                   <div className="flex items-baseline justify-between gap-2 mb-2">
                     <div className="flex items-baseline gap-2">
                       <span className="font-display text-xs font-bold text-accent uppercase">{day.label}</span>
@@ -569,7 +604,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                       <button onClick={() => printDay(day, week.name, dayDate)} title="Print this day" className="text-[10px] text-faint hover:text-accent flex-shrink-0">🖨 Print</button>
                     )}
                   </div>
-                  <div className="space-y-2 max-h-[420px] overflow-y-auto">
+                  <div className={focusMode ? "space-y-2 max-h-[65vh] overflow-y-auto" : "space-y-2 max-h-[420px] overflow-y-auto"}>
                     {day.exercises.length === 0 && <div className="text-faint text-xs text-center py-3">Rest day</div>}
                     {blocks.map((b: any, blockIdx: number) => (
                       <div
@@ -638,8 +673,77 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
               );
             })}
           </div>
-        </div>
-      )}
+        );
+
+        // Only shown in the full-screen week view — the client's key-lift
+        // progress pinned alongside the programming so a coach doesn't have
+        // to leave the page to see what an athlete can currently lift.
+        const progressSidebar = (
+          <div className="bg-surface border border-edge rounded-lg p-4 lg:sticky lg:top-4 h-fit">
+            <div className="font-display text-xs uppercase tracking-wide text-muted mb-3">{isCoach ? "Client Progress" : "Your Progress"}</div>
+            {isCoach && program.assignments?.length > 0 && (
+              <select className={inputClass} value={previewAthleteId} onChange={(e) => setPreviewAthleteId(e.target.value)}>
+                {program.assignments.map((a: any) => (
+                  <option key={a.athlete.id} value={a.athlete.id}>{a.athlete.name}</option>
+                ))}
+              </select>
+            )}
+            {isCoach && !(program.assignments?.length > 0) && (
+              <p className="text-xs text-faint">No athlete assigned to this program yet.</p>
+            )}
+            {Object.keys(bestE1rm).length > 0 ? (
+              <div className="space-y-1.5 mt-3">
+                {Object.entries(bestE1rm)
+                  .sort((a: any, b: any) => b[1] - a[1])
+                  .slice(0, 10)
+                  .map(([name, val]: any) => (
+                    <div key={name} className="flex items-center justify-between gap-2 text-xs bg-void border border-edgesoft rounded px-2 py-1.5">
+                      <span className="text-muted truncate">{name}</span>
+                      <span className="font-semibold text-primary flex-shrink-0">{Math.round(val)} lb e1RM</span>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <p className="text-xs text-faint mt-3">No logged lifts yet.</p>
+            )}
+            {(isCoach ? !!effectiveAthleteId : true) && (
+              <a
+                href={isCoach ? `/dashboard/athletes/${effectiveAthleteId}/progress` : "/dashboard/progress"}
+                className="block text-center text-xs text-accent underline mt-3"
+              >
+                View full progress →
+              </a>
+            )}
+          </div>
+        );
+
+        if (focusMode) {
+          return (
+            <div className="fixed inset-0 z-50 bg-void overflow-y-auto">
+              <div className="max-w-[1500px] mx-auto p-4 md:p-8">
+                {daysHeader}
+                {isCoach && (
+                  <p className="text-[11px] text-faint mb-3">Tip: drag an exercise (or superset block) by its ⠿ handle to reorder it within the day. Press Esc to exit full screen.</p>
+                )}
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
+                  {daysGrid}
+                  {progressSidebar}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="bg-surface border border-edge rounded-lg p-4">
+            {daysHeader}
+            {isCoach && (
+              <p className="text-[11px] text-faint mb-2">Tip: drag an exercise (or superset block) by its ⠿ handle to reorder it within the day.</p>
+            )}
+            {daysGrid}
+          </div>
+        );
+      })()}
     </div>
   );
 }
