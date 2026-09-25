@@ -30,6 +30,7 @@ export default function DashboardHome() {
   const [programs, setPrograms] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [today, setToday] = useState<{ date: string; items: any[] } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -39,9 +40,15 @@ export default function DashboardHome() {
           setAthletes(a);
           setPrograms(p);
         } else {
-          const [p, l] = await Promise.all([api("/api/programs"), api("/api/workouts")]);
+          const todayDate = new Date().toISOString().slice(0, 10);
+          const [p, l, t] = await Promise.all([
+            api("/api/programs"),
+            api("/api/workouts"),
+            api(`/api/programs/today?date=${todayDate}`),
+          ]);
           setPrograms(p);
           setLogs(l);
+          setToday(t);
         }
       } catch {
         // stay on the empty-state view if this fails — the page below still renders fine
@@ -94,6 +101,34 @@ export default function DashboardHome() {
         </>
       ) : (
         <>
+          {today && today.items.length > 0 && (
+            <div className="bg-surface border border-accent rounded-lg p-4 mb-6">
+              <div className="font-display text-xs uppercase tracking-wide text-accent mb-3">Today's Workout</div>
+              <div className="space-y-2">
+                {today.items.map((it: any) => (
+                  <div key={it.dayId} className="flex items-center justify-between gap-3 bg-void border border-edgesoft rounded px-3 py-2 flex-wrap">
+                    <div>
+                      <div className="text-sm font-semibold">
+                        {it.programName} — {it.phaseName} · {it.weekName || "Week"} · {it.dayName || it.dayLabel}
+                      </div>
+                      <div className="text-xs text-faint mt-0.5">
+                        {it.isRestDay ? "Rest day — nothing scheduled" : `${it.loggedCount} of ${it.exerciseCount} exercises logged`}
+                      </div>
+                    </div>
+                    {!it.isRestDay && (
+                      <Link
+                        href={`/dashboard/workouts?programId=${it.programId}&dayId=${it.dayId}`}
+                        className="bg-accent text-accenttext text-xs font-semibold rounded px-3 py-1.5 flex-shrink-0"
+                      >
+                        {it.loggedCount >= it.exerciseCount ? "View / edit" : "Log today's workout"}
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3 mb-6">
             <StatCard label="Assigned Plans" value={loaded ? programs.length : "…"} accent="accent" />
             <StatCard label="Sessions Logged" value={loaded ? logs.length : "…"} accent="chalk" />
