@@ -28,6 +28,99 @@ export async function listPrograms(req: Request, res: Response) {
   res.json(programs);
 }
 
+// For the given athlete, finds the day in each of their assigned programs
+// whose week has a start date set and lines up with "today" (the date the
+// frontend passes, computed the same way the workout-logging date field
+// already defaults itself) -- so the athlete's dashboard can show "today's
+// workout" and the program page can highlight it, without anyone having to
+// click through Phases > Weeks > Days by hand. A week with no start date
+// is skipped, since there's nothing to line it up against.
+export async function getToday(req: Request, res: Response) {
+  let athleteId: string;
+  if (req.user!.role === "ATHLETE") {
+    athleteId = req.user!.userId;
+  } else {
+    athleteId = String(req.query.athleteId || "");
+    if (!athleteId) return res.status(400).json({ error: "athleteId is required" });
+    const athlete = await prisma.user.findUnique({ where: { id: athleteId } });
+    if (!athlete || athlete.teamId !== req.user!.teamId || athlete.role !== "ATHLETE") {
+      return res.status(404).json({ error: "Athlete not found on your team" });
+    }
+  }
+
+  const dateParam = String(req.query.date || "");
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : new Date().toISOString().slice(0, 10);
+  const todayStart = new Date(`${today}T00:00:00.000Z`);
+
+  const programs = await prisma.program.findMany({
+    where: { teamId: req.user!.teamId, assignments: { some: { athleteId } } },
+    include: {
+      phases: {
+        orderBy: { order: "asc" },
+        include: {
+          microcycles: {
+            where: { startDate: { not: null } },
+            include: { days: { include: { exercises: { select: { exerciseName: true } } } } },
+          },
+        },
+      },
+    },
+  });
+
+  const matches: { item: any; exerciseNames: string[] }[] = [];
+  for (const program of programs) {
+    for (const phase of program.phases) {
+      for (const week of phase.microcycles) {
+        if (!week.startDate) continue;
+        const weekStart = new Date(week.startDate);
+        weekStart.setUTCHours(0, 0, 0, 0);
+        const offsetDays = Math.round((todayStart.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000));
+        if (offsetDays < 0 || offsetDays > 6) continue;
+        const day = week.days.find((d) => d.dayOfWeek === offsetDays);
+        if (!day) continue;
+        matches.push({
+          item: {
+            programId: program.id,
+            programName: program.name,
+            phaseId: phase.id,
+            phaseName: phase.name,
+            weekId: week.id,
+            weekName: week.name,
+            dayId: day.id,
+            dayLabel: day.label,
+            dayName: day.name,
+            isRestDay: day.exercises.length === 0,
+            exerciseCount: day.exercises.length,
+          },
+          exerciseNames: day.exercises.map((e) => e.exerciseName),
+        });
+      }
+    }
+  }
+
+  if (matches.length === 0) return res.json({ date: today, items: [] });
+
+  // Best-effort "already logged today" check: matched by exercise name +
+  // date, the same loose link the rest of the app already uses for things
+  // like personal records -- there's no direct foreign key from a logged
+  // set back to the specific program day it was prescribed on.
+  const allNames = Array.from(new Set(matches.flatMap((m) => m.exerciseNames)));
+  const logsToday = allNames.length
+    ? await prisma.workoutLog.findMany({
+        where: { athleteId, date: todayStart, exerciseName: { in: allNames } },
+        select: { exerciseName: true },
+      })
+    : [];
+  const loggedNames = new Set(logsToday.map((l) => l.exerciseName));
+
+  const items = matches.map((m) => ({
+    ...m.item,
+    loggedCount: m.exerciseNames.filter((n) => loggedNames.has(n)).length,
+  }));
+
+  res.json({ date: today, items });
+}
+
 const fullInclude = {
   phases: {
     orderBy: { order: "asc" as const },
