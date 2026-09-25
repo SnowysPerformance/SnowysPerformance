@@ -16,8 +16,14 @@ import { signToken } from "../utils/jwt";
 // to strangers the way open registration did.
 
 export async function login(req: Request, res: Response) {
-  const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email } });
+  const email = String(req.body.email || "").trim();
+  const { password } = req.body;
+  if (!email || !password) return res.status(401).json({ error: "Invalid email or password" });
+  // Case-insensitive on purpose: emails are stored lowercase going forward
+  // (see createAthlete/updateAthlete/updateMe/invites), but this also still
+  // matches any older account whose email was saved with different casing,
+  // so nobody gets locked out over a capital letter.
+  const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
   if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
   const ok = await bcrypt.compare(password, user.passwordHash);
@@ -51,10 +57,13 @@ export async function updateMe(req: Request, res: Response) {
   const { name, email } = req.body;
   const data: any = {};
   if (name !== undefined && name.trim()) data.name = name.trim();
-  if (email !== undefined && email.trim() && email.trim() !== current.email) {
-    const existing = await prisma.user.findUnique({ where: { email: email.trim() } });
-    if (existing) return res.status(409).json({ error: "Email already in use" });
-    data.email = email.trim();
+  if (email !== undefined && email.trim()) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail !== current.email.toLowerCase()) {
+      const existing = await prisma.user.findFirst({ where: { email: { equals: normalizedEmail, mode: "insensitive" } } });
+      if (existing) return res.status(409).json({ error: "Email already in use" });
+      data.email = normalizedEmail;
+    }
   }
 
   const updated = await prisma.user.update({ where: { id: current.id }, data });
