@@ -13,14 +13,18 @@ export async function listAthletes(req: Request, res: Response) {
 
 export async function createAthlete(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
-  const { name, email, password } = req.body;
+  const { name, password } = req.body;
+  const email = String(req.body.email || "").trim().toLowerCase();
   if (!name || !email || !password) {
     return res.status(400).json({ error: "name, email, and password are required" });
   }
   if (String(password).length < 6) {
     return res.status(400).json({ error: "Password must be at least 6 characters" });
   }
-  const existing = await prisma.user.findUnique({ where: { email } });
+  // Case-insensitive: emails are always stored lowercase, so this also
+  // catches "Coach already used that address with different capitalization"
+  // instead of silently creating a second, unreachable-looking account.
+  const existing = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
   if (existing) return res.status(409).json({ error: "Email already registered" });
 
 const passwordHash = await bcrypt.hash(password, 10);
@@ -83,13 +87,16 @@ export async function updateAthlete(req: Request, res: Response) {
   const canEdit = await computeCanEdit(req, athlete.id);
   if (!canEdit) return res.status(403).json({ error: "You don't have edit access to this athlete" });
 
-const { name, email, password } = req.body;
+const { name, password } = req.body;
   const data: any = {};
   if (name !== undefined && name.trim()) data.name = name.trim();
-  if (email !== undefined && email.trim() && email.trim() !== athlete.email) {
-    const existing = await prisma.user.findUnique({ where: { email: email.trim() } });
-    if (existing) return res.status(409).json({ error: "Email already in use" });
-    data.email = email.trim();
+  if (req.body.email !== undefined && String(req.body.email).trim()) {
+    const normalizedEmail = String(req.body.email).trim().toLowerCase();
+    if (normalizedEmail !== athlete.email.toLowerCase()) {
+      const existing = await prisma.user.findFirst({ where: { email: { equals: normalizedEmail, mode: "insensitive" } } });
+      if (existing) return res.status(409).json({ error: "Email already in use" });
+      data.email = normalizedEmail;
+    }
   }
   if (password) {
     if (String(password).length < 6) {
