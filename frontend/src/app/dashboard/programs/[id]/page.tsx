@@ -32,6 +32,29 @@ function patchExerciseInProgram(program: any, exerciseId: string, patch: any) {
   };
 }
 
+// Finds the phase/week/day that lines up with today's real calendar date
+// (matched against whichever week has a start date set), so the page can
+// default to showing today's work instead of always Phase 1 / Week 1 — and
+// so the day tab that matches can get a "Today" badge. Mirrors the same
+// date math the backend's /api/programs/today endpoint uses.
+function findTodayMatch(program: any): { phaseId: string; weekId: string; dayId: string } | null {
+  const today = new Date().toISOString().slice(0, 10);
+  const todayStart = new Date(`${today}T00:00:00.000Z`).getTime();
+  for (const ph of program.phases) {
+    for (const w of ph.microcycles) {
+      if (!w.startDate) continue;
+      const weekStart = new Date(w.startDate);
+      weekStart.setUTCHours(0, 0, 0, 0);
+      const offsetDays = Math.round((todayStart - weekStart.getTime()) / (24 * 60 * 60 * 1000));
+      if (offsetDays < 0 || offsetDays > 6) continue;
+      const day = w.days.find((d: any) => d.dayOfWeek === offsetDays);
+      if (!day) continue;
+      return { phaseId: ph.id, weekId: w.id, dayId: day.id };
+    }
+  }
+  return null;
+}
+
 // patch a single phase's own fields (e.g. renaming it)
 function patchPhaseInProgram(program: any, phaseId: string, patch: any) {
   return { ...program, phases: program.phases.map((p: any) => (p.id === phaseId ? { ...p, ...patch } : p)) };
@@ -124,8 +147,18 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   if (error && !program) return <p className="text-red-400">{error}</p>;
   if (!program) return <p className="text-faint">Loading…</p>;
 
-  const phase = program.phases.find((p: any) => p.id === selectedPhaseId) || program.phases[0];
-  const week = phase?.microcycles.find((w: any) => w.id === selectedWeekId) || phase?.microcycles[0];
+  // Default to whatever phase/week lines up with today (if the coach set week
+  // start dates) instead of always Phase 1 / Week 1 — but only until the
+  // athlete or coach clicks a different phase/week themselves.
+  const todayMatch = findTodayMatch(program);
+  const phase =
+    program.phases.find((p: any) => p.id === selectedPhaseId) ||
+    (!selectedPhaseId && todayMatch && program.phases.find((p: any) => p.id === todayMatch.phaseId)) ||
+    program.phases[0];
+  const week =
+    phase?.microcycles.find((w: any) => w.id === selectedWeekId) ||
+    (!selectedWeekId && todayMatch && phase?.id === todayMatch.phaseId && phase?.microcycles.find((w: any) => w.id === todayMatch.weekId)) ||
+    phase?.microcycles[0];
 
   async function guard(fn: () => Promise<void>) {
     try {
@@ -528,6 +561,9 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                     <div className="flex items-baseline gap-2">
                       <span className="font-display text-xs font-bold text-accent uppercase">{day.label}</span>
                       {dayDate && <span className="text-[10px] text-faint">{dayDate}</span>}
+                      {todayMatch?.dayId === day.id && (
+                        <span className="text-[9px] bg-accent text-accenttext rounded px-1.5 py-0.5 font-bold uppercase">Today</span>
+                      )}
                     </div>
                     {day.exercises.length > 0 && (
                       <button onClick={() => printDay(day, week.name, dayDate)} title="Print this day" className="text-[10px] text-faint hover:text-accent flex-shrink-0">🖨 Print</button>
