@@ -3,7 +3,10 @@ import "./globals.css";
 import InstallPrompt from "@/components/InstallPrompt";
 
 export const metadata = {
+  metadataBase: new URL("https://www.snowysperformance.com"),
   title: "Snowy's Performance",
+  description:
+    "Coaching software for sports performance training: build and assign training programs, track athlete workouts and personal records, monitor recovery with WHOOP, and message your team.",
   // Deliberately NOT setting `manifest: "/manifest.json"` here — Next.js's
   // metadata API auto-adds crossOrigin="use-credentials" to the generated
   // <link rel="manifest"> tag (a known Next 14/15 behavior, see
