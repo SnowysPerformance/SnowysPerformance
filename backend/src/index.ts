@@ -12,11 +12,16 @@ const PORT = process.env.PORT || 4000;
 // changes.)
 const PLATFORM_ADMIN_EMAIL = "markbaseball2325@gmail.com";
 
-// One-time-per-boot check: make sure the platform-admin account (once it
-// exists) is flagged as the platform admin, so Mark never has to touch the
-// database directly to get access to the Admin page. This only ever ADDS
-// the flag — it never removes it from anyone, so a stray misconfiguration
-// can't accidentally lock the real admin out.
+// Runs at boot and then on a recurring timer (see setInterval below): makes
+// sure the platform-admin account is flagged as the platform admin, so Mark
+// never has to touch the database directly to get access to the Admin page.
+// It also actively STRIPS the flag from every other account. Nothing in the
+// app ever grants isPlatformAdmin to anyone else -- there is no invite,
+// signup, or API call that can set it (see admin.controller.ts) -- but this
+// is a defense-in-depth backstop: if a bug, a stray manual database edit, or
+// someone else's account happening to match a misconfigured ADMIN_EMAIL ever
+// left a second admin in place, this check (running hourly, not just at
+// boot) removes it again on its own, no restart required.
 async function ensurePlatformAdmin() {
   const email = (process.env.ADMIN_EMAIL || PLATFORM_ADMIN_EMAIL).trim().toLowerCase();
   if (!email) return;
@@ -24,11 +29,17 @@ async function ensurePlatformAdmin() {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       console.log(`Platform admin email is ${email}, but no account with that email exists yet — log in with that account first, then restart.`);
-      return;
-    }
-    if (!user.isPlatformAdmin) {
+    } else if (!user.isPlatformAdmin) {
       await prisma.user.update({ where: { id: user.id }, data: { isPlatformAdmin: true } });
       console.log(`Granted platform admin access to ${email}.`);
+    }
+
+    const revoked = await prisma.user.updateMany({
+      where: { isPlatformAdmin: true, email: { not: email } },
+      data: { isPlatformAdmin: false },
+    });
+    if (revoked.count > 0) {
+      console.warn(`Revoked platform admin access from ${revoked.count} account(s) other than ${email}.`);
     }
   } catch (err) {
     console.error("Admin bootstrap check failed:", err);
@@ -100,3 +111,9 @@ async function backfillTeamMemberships() {
 Promise.all([ensurePlatformAdmin(), backfillPersonalRecords(), backfillTeamMemberships()]).finally(() => {
   app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
 });
+
+// Re-run the admin check hourly for as long as the server stays up, so the
+// single-admin guarantee above holds without needing a redeploy/restart.
+setInterval(() => {
+  ensurePlatformAdmin().catch((err) => console.error("Scheduled admin check failed:", err));
+}, 60 * 60 * 1000);
