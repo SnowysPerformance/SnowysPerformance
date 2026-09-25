@@ -7,6 +7,7 @@ router.use(authenticate);
 
 router.post("/", ctrl.createProgram);
 router.get("/", ctrl.listPrograms);
+router.get("/today", ctrl.getToday);
 router.get("/:id", ctrl.getProgram);
 router.delete("/:id", ctrl.deleteProgram);
 router.post("/:id/assign", ctrl.assignProgram);
