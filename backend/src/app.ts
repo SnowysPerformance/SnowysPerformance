@@ -15,6 +15,7 @@ import inviteRoutes from "./routes/invites.routes";
 import coachRoutes from "./routes/coaches.routes";
 import adminRoutes from "./routes/admin.routes";
 import messageRoutes from "./routes/messages.routes";
+import leaderboardRoutes from "./routes/leaderboard.routes";
 
 export const app = express();
 
@@ -89,6 +90,7 @@ app.use("/api/invites", inviteRoutes);
 app.use("/api/coaches", coachRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/leaderboard", leaderboardRoutes);
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
