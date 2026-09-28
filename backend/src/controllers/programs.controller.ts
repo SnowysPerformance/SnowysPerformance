@@ -286,6 +286,7 @@ export async function duplicateWeek(req: Request, res: Response) {
               distance: ex.distance, resisted: ex.resisted, resistance: ex.resistance, restSeconds: ex.restSeconds,
               isWarmup: ex.isWarmup, isTest: ex.isTest, groupId: ex.groupId, groupLabel: ex.groupLabel, order: ex.order,
               notes: ex.notes,
+              goalBarSpeed: ex.goalBarSpeed, goalBarSpeedMax: ex.goalBarSpeedMax, velocityLossPct: ex.velocityLossPct,
             })),
           },
         })),
@@ -305,6 +306,13 @@ export async function deleteWeek(req: Request, res: Response) {
 }
 
 // ---------- exercises ----------
+
+// VBT (bar speed) fields: blank / missing / non-numeric all mean "not set".
+function numOrNull(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 async function verifyDayOwnership(dayId: string, teamId: string) {
   const day = await prisma.programDay.findUnique({ where: { id: dayId }, include: { week: { include: { program: true } } } });
@@ -340,6 +348,9 @@ export async function addExercise(req: Request, res: Response) {
       isWarmup: !!b.isWarmup,
       isTest: !!b.isTest,
       notes: b.notes || null,
+      goalBarSpeed: numOrNull(b.goalBarSpeed),
+      goalBarSpeedMax: numOrNull(b.goalBarSpeedMax),
+      velocityLossPct: numOrNull(b.velocityLossPct),
       order: siblingCount,
     },
   });
@@ -378,6 +389,9 @@ export async function updateExercise(req: Request, res: Response) {
       groupId: b.groupId !== undefined ? b.groupId : existing.groupId,
       groupLabel: b.groupLabel !== undefined ? b.groupLabel : existing.groupLabel,
       notes: b.notes !== undefined ? b.notes : existing.notes,
+      goalBarSpeed: b.goalBarSpeed !== undefined ? numOrNull(b.goalBarSpeed) : existing.goalBarSpeed,
+      goalBarSpeedMax: b.goalBarSpeedMax !== undefined ? numOrNull(b.goalBarSpeedMax) : existing.goalBarSpeedMax,
+      velocityLossPct: b.velocityLossPct !== undefined ? numOrNull(b.velocityLossPct) : existing.velocityLossPct,
       order: b.order !== undefined ? Number(b.order) : existing.order,
     },
   });
