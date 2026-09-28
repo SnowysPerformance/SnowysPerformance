@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
+import ProgramCalendar from "@/components/ProgramCalendar";
 import { computeBestE1rm, computedWeight, targetLabel, hasSetDetails, computedWeightForSet, setTargetLabel, vbtFromExercise, vbtLabel } from "@/lib/planTargets";
 
 // HTML-escape a value before interpolating it into the printable day sheet
@@ -106,6 +107,8 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   // Days header to expand the current week to fill the page, with the
   // client's progress pinned in a sidebar alongside it.
   const [focusMode, setFocusMode] = useState(false);
+  // "weeks" = the phase → week → day builder; "calendar" = month view.
+  const [view, setView] = useState<"weeks" | "calendar">("weeks");
 
   const pendingPatches = useRef<Record<string, any>>({});
   const saveTimers = useRef<Record<string, any>>({});
@@ -460,6 +463,33 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
         </div>
       )}
 
+      <div className="flex gap-1.5 mb-4">
+        {(["weeks", "calendar"] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={"rounded px-3 py-1.5 text-[13px] font-medium border transition-colors " + (view === v ? "text-primary" : "text-muted border-edge hover:text-primary hover:bg-raised")}
+            style={view === v ? { background: "rgba(126,200,227,0.14)", borderColor: "rgba(126,200,227,0.4)" } : undefined}
+          >
+            {v === "weeks" ? "Week by week" : "📅 Calendar"}
+          </button>
+        ))}
+      </div>
+
+      {view === "calendar" ? (
+        <ProgramCalendar
+          program={program}
+          isCoach={isCoach}
+          onChanged={load}
+          onOpenDay={(phaseId, weekId) => {
+            setSelectedPhaseId(phaseId);
+            setSelectedWeekId(weekId);
+            setView("weeks");
+            setFocusMode(true);
+          }}
+        />
+      ) : (
+      <>
       {/* Phases */}
       <div className="bg-surface border border-edge rounded-lg p-4 mb-4">
         <div className="flex justify-between items-center mb-3">
@@ -593,7 +623,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                 ? new Date(new Date(week.startDate).getTime() + day.dayOfWeek * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
                 : null;
               return (
-                <div key={day.id} className={focusMode ? "bg-void border border-edgesoft rounded-lg p-4" : "min-w-[230px] max-w-[250px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3"}>
+                <div key={day.id} className={focusMode ? "bg-void border border-edgesoft rounded-lg p-4" : "w-[320px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3"}>
                   <div className="flex items-baseline justify-between gap-2 mb-2">
                     <div className="flex items-baseline gap-2">
                       <span className="font-display text-xs font-bold text-accent uppercase">{day.label}</span>
@@ -606,7 +636,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                       <button onClick={() => printDay(day, week.name, dayDate)} title="Print this day" className="text-[10px] text-faint hover:text-accent flex-shrink-0">🖨 Print</button>
                     )}
                   </div>
-                  <div className={focusMode ? "space-y-2 max-h-[65vh] overflow-y-auto" : "space-y-2 max-h-[420px] overflow-y-auto"}>
+                  <div className="space-y-2">
                     {day.exercises.length === 0 && <div className="text-faint text-xs text-center py-3">Rest day</div>}
                     {blocks.map((b: any, blockIdx: number) => (
                       <div
@@ -746,6 +776,8 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
           </div>
         );
       })()}
+      </>
+      )}
     </div>
   );
 }
