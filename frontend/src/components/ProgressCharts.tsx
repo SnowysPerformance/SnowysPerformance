@@ -4,6 +4,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Referenc
 import { api } from "@/lib/api";
 import { e1rm, computePRs, METHOD_PALETTE } from "@/lib/prs";
 import WearablePanel from "./WearablePanel";
+import { avgVelocity, vbtFromLog } from "@/lib/planTargets";
 
 const FLAG_STYLES: Record<string, string> = {
   HIGH_RISK: "bg-red-950/40 text-red-300 border-red-800/50",
@@ -42,7 +43,7 @@ export default function ProgressCharts({ athleteId, showFatigue }: { athleteId: 
   const [fatigue, setFatigue] = useState<any>(null);
 
   const [customExercise, setCustomExercise] = useState("");
-  const [customMetric, setCustomMetric] = useState<"volume" | "topWeight" | "e1rm">("e1rm");
+  const [customMetric, setCustomMetric] = useState<"volume" | "topWeight" | "e1rm" | "velocity">("e1rm");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [colorByMethod, setColorByMethod] = useState(true);
@@ -90,6 +91,8 @@ export default function ProgressCharts({ athleteId, showFatigue }: { athleteId: 
     return logs
       .filter((l) => l.exerciseName === customExercise && (l.type === "weighted" || !l.type))
       .filter((l) => (!fromDate || new Date(l.date) >= new Date(fromDate)) && (!toDate || new Date(l.date) <= new Date(toDate)))
+      // Bar speed only charts sessions where a speed was actually logged.
+      .filter((l) => customMetric !== "velocity" || avgVelocity(l.sets) != null)
       .slice()
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map((l) => {
@@ -97,6 +100,7 @@ export default function ProgressCharts({ athleteId, showFatigue }: { athleteId: 
         let value = 0;
         if (customMetric === "volume") value = l.volumeLoad;
         else if (customMetric === "topWeight") value = valid.length ? Math.max(...valid.map((s: any) => s.weight)) : 0;
+        else if (customMetric === "velocity") value = Math.round((avgVelocity(l.sets) || 0) * 100) / 100;
         else value = valid.length ? Math.max(...valid.map((s: any) => Math.round(e1rm(s.weight, s.reps)))) : 0;
         return {
           date: new Date(l.date).toLocaleDateString(),
@@ -126,7 +130,18 @@ export default function ProgressCharts({ athleteId, showFatigue }: { athleteId: 
     return segs.filter((s) => s.methodName);
   }, [customChartData]);
 
-  const metricLabel = customMetric === "volume" ? "Volume (lb·reps)" : customMetric === "topWeight" ? "Top Weight (lb)" : "Est. 1RM (lb)";
+  const metricLabel =
+    customMetric === "volume" ? "Volume (lb·reps)" : customMetric === "topWeight" ? "Top Weight (lb)" : customMetric === "velocity" ? "Avg Bar Speed (m/s)" : "Est. 1RM (lb)";
+
+  // The most recent prescribed VBT zone for this exercise, shaded on the
+  // bar-speed chart so it's easy to see which sessions landed in it.
+  const latestZone = useMemo(() => {
+    if (customMetric !== "velocity" || !customExercise) return null;
+    const withZone = logs
+      .filter((l) => l.exerciseName === customExercise && vbtFromLog(l))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return withZone.length ? vbtFromLog(withZone[0]) : null;
+  }, [logs, customExercise, customMetric]);
 
   return (
     <div className="space-y-6">
@@ -198,6 +213,7 @@ export default function ProgressCharts({ athleteId, showFatigue }: { athleteId: 
             <option value="e1rm">Estimated 1RM</option>
             <option value="topWeight">Top Weight</option>
             <option value="volume">Volume Load</option>
+            <option value="velocity">Bar Speed (VBT)</option>
           </select>
           <input type="date" className={inputClass} value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
           <span className="text-xs text-faint self-center">to</span>
@@ -220,7 +236,9 @@ export default function ProgressCharts({ athleteId, showFatigue }: { athleteId: 
         {!customExercise ? (
           <p className="text-faint text-sm">Pick an exercise above to see its trend.</p>
         ) : customChartData.length === 0 ? (
-          <p className="text-faint text-sm">No matching data for that exercise / date range.</p>
+          <p className="text-faint text-sm">
+            {customMetric === "velocity" ? "No bar speeds logged for that exercise / date range yet." : "No matching data for that exercise / date range."}
+          </p>
         ) : (
           <>
             <div className="bg-void border border-edgesoft rounded p-2">
@@ -231,6 +249,9 @@ export default function ProgressCharts({ athleteId, showFatigue }: { athleteId: 
                     methodSegments.map((s, i) => <ReferenceArea key={i} x1={s.start} x2={s.end} fill={methodColorMap[s.methodName]} fillOpacity={0.08} />)}
                   <XAxis dataKey="date" stroke="#5B5F6E" fontSize={11} tickLine={false} axisLine={{ stroke: "#333744" }} />
                   <YAxis stroke="#5B5F6E" fontSize={11} tickLine={false} axisLine={false} width={55} />
+                  {latestZone && (
+                    <ReferenceArea y1={latestZone.min ?? 0} y2={latestZone.max ?? undefined} fill="#6FA96A" fillOpacity={0.12} ifOverflow="extendDomain" />
+                  )}
                   <Tooltip contentStyle={{ background: "#191C23", border: "1px solid #333744", borderRadius: 5, fontSize: 12 }} labelStyle={{ color: "#8F94A3" }} />
                   <Legend wrapperStyle={{ fontSize: 12, color: "#8F94A3" }} />
                   <Line
