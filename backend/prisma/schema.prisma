@@ -152,6 +152,8 @@ percentOfMax Float?
 weight Float?
 setDetails Json?
 goalBarSpeed Float?
+goalBarSpeedMax Float?
+velocityLossPct Float?
 methodName String?
 band String?
 distance String?
@@ -187,6 +189,9 @@ restSeconds String?
 isWarmup Boolean @default(false)
 isTest Boolean @default(false)
 sets Json
+vbtMin Float?
+vbtMax Float?
+vbtLossPct Float?
 volumeLoad Float
 notes String?
 createdAt DateTime @default(now())
