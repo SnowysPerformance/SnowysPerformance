@@ -109,6 +109,9 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   const [focusMode, setFocusMode] = useState(false);
   // "weeks" = the phase → week → day builder; "calendar" = month view.
   const [view, setView] = useState<"weeks" | "calendar">("weeks");
+  // One day opened across the whole screen, its exercises laid out side by
+  // side so the full workout is visible at once while programming it.
+  const [openDayId, setOpenDayId] = useState<string | null>(null);
 
   const pendingPatches = useRef<Record<string, any>>({});
   const saveTimers = useRef<Record<string, any>>({});
@@ -152,14 +155,17 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
   }, [program, previewAthleteId, isCoach]);
 
   // Let Escape close the full-screen week view, same as the ✕ button.
+  // With a single day open, Escape closes just that day first.
   useEffect(() => {
-    if (!focusMode) return;
+    if (!focusMode && !openDayId) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setFocusMode(false);
+      if (e.key !== "Escape") return;
+      if (openDayId) setOpenDayId(null);
+      else setFocusMode(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focusMode]);
+  }, [focusMode, openDayId]);
 
   if (error && !program) return <p className="text-red-400">{error}</p>;
   if (!program) return <p className="text-faint">Loading…</p>;
@@ -481,11 +487,11 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
           program={program}
           isCoach={isCoach}
           onChanged={load}
-          onOpenDay={(phaseId, weekId) => {
+          onOpenDay={(phaseId, weekId, dayId) => {
             setSelectedPhaseId(phaseId);
             setSelectedWeekId(weekId);
             setView("weeks");
-            setFocusMode(true);
+            setOpenDayId(dayId);
           }}
         />
       ) : (
@@ -615,28 +621,39 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
           </div>
         );
 
-        const daysGrid = (
-          <div className={focusMode ? "grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-4" : "flex gap-3 overflow-x-auto pb-2"}>
-            {week.days.map((day: any) => {
+        // One day's card. full = the single-day full-screen view, where the
+        // exercises sit side by side in columns instead of stacked.
+        const renderDay = (day: any, full: boolean) => {
               const blocks = buildBlocks(day);
               const dayDate = week.startDate
                 ? new Date(new Date(week.startDate).getTime() + day.dayOfWeek * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
                 : null;
               return (
-                <div key={day.id} className={focusMode ? "bg-void border border-edgesoft rounded-lg p-4" : "w-[320px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3"}>
+                <div key={day.id} className={full ? "bg-void border border-edgesoft rounded-lg p-4 md:p-6" : focusMode ? "bg-void border border-edgesoft rounded-lg p-4" : "w-[320px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3"}>
                   <div className="flex items-baseline justify-between gap-2 mb-2">
                     <div className="flex items-baseline gap-2">
-                      <span className="font-display text-xs font-bold text-accent uppercase">{day.label}</span>
+                      {full ? (
+                        <span className="font-display text-lg font-bold text-accent uppercase">{day.name || day.label}</span>
+                      ) : (
+                        <button onClick={() => setOpenDayId(day.id)} title="Open this day full screen" className="font-display text-xs font-bold text-accent uppercase hover:underline">
+                          {day.label}
+                        </button>
+                      )}
                       {dayDate && <span className="text-[10px] text-faint">{dayDate}</span>}
                       {todayMatch?.dayId === day.id && (
                         <span className="text-[9px] bg-accent text-accenttext rounded px-1.5 py-0.5 font-bold uppercase">Today</span>
                       )}
                     </div>
-                    {day.exercises.length > 0 && (
-                      <button onClick={() => printDay(day, week.name, dayDate)} title="Print this day" className="text-[10px] text-faint hover:text-accent flex-shrink-0">🖨 Print</button>
-                    )}
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      {!full && (
+                        <button onClick={() => setOpenDayId(day.id)} title="Open this day full screen" className="text-[10px] text-accent hover:underline">⛶ Open day</button>
+                      )}
+                      {day.exercises.length > 0 && (
+                        <button onClick={() => printDay(day, week.name, dayDate)} title="Print this day" className="text-[10px] text-faint hover:text-accent">🖨 Print</button>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className={full ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 items-start" : "space-y-2"}>
                     {day.exercises.length === 0 && <div className="text-faint text-xs text-center py-3">Rest day</div>}
                     {blocks.map((b: any, blockIdx: number) => (
                       <div
@@ -703,7 +720,11 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
                   )}
                 </div>
               );
-            })}
+        };
+
+        const daysGrid = (
+          <div className={focusMode ? "grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-4" : "flex gap-3 overflow-x-auto pb-2"}>
+            {week.days.map((day: any) => renderDay(day, false))}
           </div>
         );
 
@@ -748,6 +769,33 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
             )}
           </div>
         );
+
+        const openDay = openDayId ? week.days.find((d: any) => d.id === openDayId) : null;
+        if (openDay) {
+          const orderedDays = [...week.days].sort((a: any, b: any) => a.dayOfWeek - b.dayOfWeek);
+          const idx = orderedDays.findIndex((d: any) => d.id === openDay.id);
+          const prevDay = idx > 0 ? orderedDays[idx - 1] : null;
+          const nextDay = idx < orderedDays.length - 1 ? orderedDays[idx + 1] : null;
+          const navBtn = "text-xs text-muted hover:text-primary disabled:opacity-30 disabled:hover:text-muted border border-edge rounded px-2 py-1";
+          return (
+            <div className="fixed inset-0 z-[60] bg-void overflow-y-auto">
+              <div className="max-w-[1800px] mx-auto p-4 md:p-8">
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                  <button onClick={() => setOpenDayId(null)} className={navBtn}>← Back to week</button>
+                  <div className="font-display text-xs uppercase tracking-wide text-muted">{phase.name} · {week.name}</div>
+                  <div className="flex items-center gap-1 ml-auto">
+                    <button disabled={!prevDay} onClick={() => prevDay && setOpenDayId(prevDay.id)} className={navBtn}>← {prevDay?.label || "Prev"}</button>
+                    <button disabled={!nextDay} onClick={() => nextDay && setOpenDayId(nextDay.id)} className={navBtn}>{nextDay?.label || "Next"} →</button>
+                  </div>
+                </div>
+                {isCoach && (
+                  <p className="text-[11px] text-faint mb-3">Every exercise for the day is laid out side by side. Drag by the ⠿ handle to reorder. Press Esc to go back.</p>
+                )}
+                {renderDay(openDay, true)}
+              </div>
+            </div>
+          );
+        }
 
         if (focusMode) {
           return (
