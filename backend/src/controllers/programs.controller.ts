@@ -409,6 +409,31 @@ export async function deleteExercise(req: Request, res: Response) {
   res.status(204).send();
 }
 
+// Calendar drag-and-drop: moves day A's workout (its exercises and workout
+// name) onto day B, and B's onto A, so dropping onto an empty day moves the
+// workout and dropping onto a planned day swaps the two. Both days must be
+// in the same program. Supersets move with their exercises.
+export async function swapDays(req: Request, res: Response) {
+  if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
+  const a = await verifyDayOwnership(req.params.dayId, req.user!.teamId);
+  const b = await verifyDayOwnership(String(req.body?.targetDayId || ""), req.user!.teamId);
+  if (!a || !b) return res.status(404).json({ error: "Not found" });
+  if (a.week.programId !== b.week.programId) return res.status(400).json({ error: "Both days must be in the same program" });
+  if (a.id === b.id) return res.json({ ok: true });
+
+  const [aEx, bEx] = await Promise.all([
+    prisma.programExercise.findMany({ where: { dayId: a.id }, select: { id: true } }),
+    prisma.programExercise.findMany({ where: { dayId: b.id }, select: { id: true } }),
+  ]);
+  await prisma.$transaction([
+    prisma.programExercise.updateMany({ where: { id: { in: aEx.map((e) => e.id) } }, data: { dayId: b.id } }),
+    prisma.programExercise.updateMany({ where: { id: { in: bEx.map((e) => e.id) } }, data: { dayId: a.id } }),
+    prisma.programDay.update({ where: { id: a.id }, data: { name: b.name } }),
+    prisma.programDay.update({ where: { id: b.id }, data: { name: a.name } }),
+  ]);
+  res.json({ ok: true });
+}
+
 // reorder every exercise in a day in one shot — used by drag-and-drop reordering
 export async function reorderExercises(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
