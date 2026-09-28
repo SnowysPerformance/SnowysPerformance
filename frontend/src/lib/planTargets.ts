@@ -79,3 +79,66 @@ export function buildDayBlocks(day: any) {
   });
   return blocks;
 }
+
+// ---------- VBT (velocity-based training / bar speed) ----------
+// A coach prescribes a bar-speed zone in m/s on a planned exercise:
+// goalBarSpeed = low end, goalBarSpeedMax = high end (either may be blank
+// for an open-ended "at least" / "at most" target), plus an optional
+// velocityLossPct cutoff ("stop when speed drops X% from your fastest").
+// Logged workouts carry a snapshot as vbtMin / vbtMax / vbtLossPct, and
+// each set's measured speed as set.velocity.
+export type VbtZone = { min: number | null; max: number | null; lossPct: number | null };
+
+const posNum = (v: any): number | null => {
+  const n = Number(v);
+  return v !== null && v !== undefined && v !== "" && Number.isFinite(n) && n > 0 ? n : null;
+};
+
+export function vbtFromExercise(ex: any): VbtZone | null {
+  const z = { min: posNum(ex?.goalBarSpeed), max: posNum(ex?.goalBarSpeedMax), lossPct: posNum(ex?.velocityLossPct) };
+  return z.min || z.max ? z : null;
+}
+export function vbtFromLog(log: any): VbtZone | null {
+  const z = { min: posNum(log?.vbtMin), max: posNum(log?.vbtMax), lossPct: posNum(log?.vbtLossPct) };
+  return z.min || z.max ? z : null;
+}
+
+const fmtV = (n: number) => n.toFixed(2);
+
+// "0.75–1.00 m/s", "≥ 0.75 m/s" or "≤ 1.00 m/s"
+export function vbtZoneLabel(z: VbtZone | null): string {
+  if (!z) return "";
+  if (z.min && z.max) return `${fmtV(z.min)}–${fmtV(z.max)} m/s`;
+  if (z.min) return `≥ ${fmtV(z.min)} m/s`;
+  return `≤ ${fmtV(z.max!)} m/s`;
+}
+// Full prescription line, e.g. "VBT 0.75–1.00 m/s · stop at 20% drop"
+export function vbtLabel(z: VbtZone | null): string {
+  if (!z) return "";
+  return `VBT ${vbtZoneLabel(z)}${z.lossPct ? ` · stop at ${z.lossPct}% drop` : ""}`;
+}
+
+// Where one measured speed sits relative to the zone.
+export function velocityStatus(v: number, z: VbtZone | null): "in" | "slow" | "fast" | null {
+  if (!z || !(v > 0)) return null;
+  if (z.min && v < z.min) return "slow";
+  if (z.max && v > z.max) return "fast";
+  return "in";
+}
+
+// Speed drop of each set vs. the fastest set so far (set-to-set velocity
+// loss), as a whole-number percent. null for sets with no speed logged.
+export function velocityDrops(velocities: Array<number | null>): Array<number | null> {
+  let fastest = 0;
+  return velocities.map((v) => {
+    if (!v || !(v > 0)) return null;
+    if (v > fastest) fastest = v;
+    return Math.round(((fastest - v) / fastest) * 100);
+  });
+}
+
+// Average of the sets that have a speed logged (m/s), or null.
+export function avgVelocity(sets: any[]): number | null {
+  const vs = (sets || []).map((s: any) => Number(s?.velocity)).filter((v) => v > 0);
+  return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
+}
