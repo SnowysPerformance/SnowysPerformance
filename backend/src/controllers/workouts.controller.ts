@@ -3,6 +3,12 @@ import { prisma } from "../db";
 import { checkCanEditAthlete } from "../utils/permissions";
 import { computeBestsFromLogs } from "../utils/prs";
 
+function posOrNull(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function computeVolumeLoad(type: string, sets: any): number {
   if (type !== "weighted") return 0;
   if (!Array.isArray(sets)) return 0;
@@ -59,6 +65,10 @@ export async function createWorkoutLog(req: Request, res: Response) {
     athleteId, date, label, exerciseName, type,
     methodName, band, distance, resisted, resistance,
     restSeconds, isWarmup, isTest, sets, notes,
+    // VBT: the prescribed bar-speed zone (m/s) and velocity-loss cutoff (%)
+    // at the time of logging, so each log can later show whether its sets
+    // hit the zone even if the plan changes afterward.
+    vbtMin, vbtMax, vbtLossPct,
     // Optional overrides so "Mark as Test" can record a test type/value/unit
     // picked directly (e.g. "Vertical Jump" in inches) instead of always
     // deriving the test result from the logged sets.
@@ -102,6 +112,9 @@ export async function createWorkoutLog(req: Request, res: Response) {
       isWarmup: !!isWarmup,
       isTest: !!isTest,
       sets,
+      vbtMin: posOrNull(vbtMin),
+      vbtMax: posOrNull(vbtMax),
+      vbtLossPct: posOrNull(vbtLossPct),
       volumeLoad: computeVolumeLoad(t, sets),
       notes,
     },
