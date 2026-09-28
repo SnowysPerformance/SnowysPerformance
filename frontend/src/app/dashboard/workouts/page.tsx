@@ -6,9 +6,41 @@ import ExercisePicker from "@/components/ExercisePicker";
 import { useAuth } from "@/components/AuthProvider";
 import { TEST_PRESETS } from "@/lib/testPresets";
 import { computePRs } from "@/lib/prs";
-import { computeBestE1rm, computedWeight, targetLabel, computedWeightForSet, setTargetLabel, hasSetDetails, buildDayBlocks } from "@/lib/planTargets";
+import { computeBestE1rm, computedWeight, targetLabel, computedWeightForSet, setTargetLabel, hasSetDetails, buildDayBlocks, vbtFromExercise, vbtFromLog, vbtLabel, vbtZoneLabel, velocityStatus, velocityDrops, avgVelocity } from "@/lib/planTargets";
 
-type SetRow = { weight: string; reps: string; duration: string };
+// velocity = measured bar speed for the set (m/s), only used for VBT.
+// Adds a measured bar speed (m/s) to a logged set when one was entered.
+function withVelocity(set: any, velocity: string | undefined) {
+  const v = Number(velocity);
+  return velocity && v > 0 ? { ...set, velocity: v } : set;
+}
+
+// Live feedback next to a set's bar speed: in the zone, too slow or too
+// fast, plus the drop from the fastest set so far when the coach set a
+// velocity-loss cutoff (turns red once it's past the cutoff).
+function SpeedBadge({ v, zone, drop }: { v: number; zone: any; drop: number | null }) {
+  const status = velocityStatus(v, zone);
+  if (!status) return <span className="w-16 flex-shrink-0" />;
+  const style =
+    status === "in"
+      ? { background: "rgba(111,169,106,0.18)", color: "#8FCB89" }
+      : { background: "rgba(227,124,124,0.18)", color: "#E89A9A" };
+  const overLoss = zone?.lossPct && drop != null && drop >= zone.lossPct;
+  return (
+    <span className="flex flex-col items-start flex-shrink-0 w-16 gap-0.5">
+      <span className="text-[10px] font-semibold rounded px-1.5 py-0.5" style={style}>
+        {status === "in" ? "✓ in zone" : status === "slow" ? "↓ slow" : "↑ fast"}
+      </span>
+      {zone?.lossPct && drop != null && drop > 0 && (
+        <span className="text-[9px]" style={{ color: overLoss ? "#E89A9A" : "#8F94A3" }}>
+          −{drop}%{overLoss ? " stop" : ""}
+        </span>
+      )}
+    </span>
+  );
+}
+
+type SetRow = { weight: string; reps: string; duration: string; velocity?: string };
 
 // useSearchParams() requires a <Suspense> boundary around it (Next.js
 // build-time requirement), so the default export just supplies that and the
@@ -44,6 +76,8 @@ function WorkoutsPageInner() {
   const [resistance, setResistance] = useState("");
   const [restSeconds, setRestSeconds] = useState("");
   const [isWarmup, setIsWarmup] = useState(false);
+  // Off-plan logging: optionally record bar speed (m/s) per set.
+  const [trackSpeed, setTrackSpeed] = useState(false);
   const [sets, setSets] = useState<SetRow[]>([{ weight: "", reps: "", duration: "" }]);
 
   const [logs, setLogs] = useState<any[]>([]);
@@ -268,7 +302,8 @@ function WorkoutsPageInner() {
   async function saveDayExercise(ex: any) {
     const rows = dayRows[ex.id] || [];
     let cleanSets: any[] = [];
-    if (ex.type === "weighted") cleanSets = rows.filter((s) => Number(s.weight) > 0 && Number(s.reps) > 0).map((s) => ({ weight: Number(s.weight), reps: Number(s.reps) }));
+    const zone = vbtFromExercise(ex);
+    if (ex.type === "weighted") cleanSets = rows.filter((s) => Number(s.weight) > 0 && Number(s.reps) > 0).map((s) => withVelocity({ weight: Number(s.weight), reps: Number(s.reps) }, zone ? s.velocity : undefined));
     else if (ex.type === "bodyweight" || ex.type === "banded") cleanSets = rows.filter((s) => Number(s.reps) > 0).map((s) => ({ reps: Number(s.reps) }));
     else cleanSets = rows.filter((s) => Number(s.duration) > 0).map((s) => ({ duration: Number(s.duration) }));
     if (cleanSets.length === 0) {
@@ -292,6 +327,9 @@ function WorkoutsPageInner() {
           isWarmup: !!ex.isWarmup,
           isTest: false,
           sets: cleanSets,
+          vbtMin: zone?.min ?? undefined,
+          vbtMax: zone?.max ?? undefined,
+          vbtLossPct: zone?.lossPct ?? undefined,
         }),
       });
       setError("");
@@ -330,7 +368,7 @@ function WorkoutsPageInner() {
   async function submitWorkout(e: React.FormEvent) {
     e.preventDefault();
     let cleanSets: any[] = [];
-    if (type === "weighted") cleanSets = sets.filter((s) => Number(s.weight) > 0 && Number(s.reps) > 0).map((s) => ({ weight: Number(s.weight), reps: Number(s.reps) }));
+    if (type === "weighted") cleanSets = sets.filter((s) => Number(s.weight) > 0 && Number(s.reps) > 0).map((s) => withVelocity({ weight: Number(s.weight), reps: Number(s.reps) }, trackSpeed ? s.velocity : undefined));
     else if (type === "bodyweight" || type === "banded") cleanSets = sets.filter((s) => Number(s.reps) > 0).map((s) => ({ reps: Number(s.reps) }));
     else cleanSets = sets.filter((s) => Number(s.duration) > 0).map((s) => ({ duration: Number(s.duration) }));
     if (!exerciseName.trim() || cleanSets.length === 0) return;
@@ -440,6 +478,8 @@ function WorkoutsPageInner() {
     const isTimeBasedEx = ex.type === "timed" || ex.type === "sprint";
     const rows = dayRows[ex.id] || [];
     const done = loggedExerciseIds.has(ex.id);
+    const dayZone = ex.type === "weighted" ? vbtFromExercise(ex) : null;
+    const dayDrops = velocityDrops(rows.map((r) => Number(r.velocity) || null));
     if (ex.isTest) {
       return (
         <div key={ex.id} className="bg-surface border border-edge rounded-lg p-3">
@@ -468,6 +508,11 @@ function WorkoutsPageInner() {
           {done && <span className="text-[10px] bg-chalk text-accenttext font-bold rounded px-1.5 py-0.5 flex-shrink-0">Logged ✓</span>}
         </div>
         {ex.restSeconds && <div className="text-[11px] text-faint mb-1">Rest: {ex.restSeconds}s</div>}
+        {dayZone && (
+          <div className="text-[11px] font-medium mb-1" style={{ color: "#7EC8E3" }}>
+            ⚡ {vbtLabel(dayZone)} — enter each set's bar speed from your device
+          </div>
+        )}
         {ex.notes && <div className="text-[11px] text-faint italic mb-2 whitespace-pre-wrap">📝 {ex.notes}</div>}
         <div className="space-y-1.5">
           {rows.map((s, i) => {
@@ -481,11 +526,15 @@ function WorkoutsPageInner() {
                   <>
                     <input className={inputClass} type="number" step="any" placeholder="Weight (lb)" value={s.weight} onChange={(e) => updateDayRow(ex.id, i, "weight", e.target.value)} />
                     <input className={inputClass} type="number" step="any" placeholder="Reps" value={s.reps} onChange={(e) => updateDayRow(ex.id, i, "reps", e.target.value)} />
+                    {dayZone && (
+                      <input className={inputClass} type="number" step="0.01" placeholder="m/s" value={s.velocity || ""} onChange={(e) => updateDayRow(ex.id, i, "velocity", e.target.value)} />
+                    )}
                   </>
                 )}
                 {(ex.type === "bodyweight" || ex.type === "banded") && (
                   <input className={inputClass} type="number" step="any" placeholder="Reps" value={s.reps} onChange={(e) => updateDayRow(ex.id, i, "reps", e.target.value)} />
                 )}
+                {dayZone && ex.type === "weighted" && <SpeedBadge v={Number(s.velocity)} zone={dayZone} drop={dayDrops[i]} />}
                 {isTimeBasedEx && (
                   <input className={inputClass} type="number" step="any" placeholder="Seconds" value={s.duration} onChange={(e) => updateDayRow(ex.id, i, "duration", e.target.value)} />
                 )}
@@ -628,6 +677,9 @@ function WorkoutsPageInner() {
                 <input className={inputClass} style={{ maxWidth: 130 }} placeholder="Rest (sec)" value={restSeconds} onChange={(e) => setRestSeconds(e.target.value)} />
               )}
               <label className={tinyCheck}><input type="checkbox" checked={isWarmup} onChange={(e) => setIsWarmup(e.target.checked)} /> Warm-up</label>
+              {type === "weighted" && (
+                <label className={tinyCheck}><input type="checkbox" checked={trackSpeed} onChange={(e) => setTrackSpeed(e.target.checked)} /> Bar speed (VBT)</label>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -638,6 +690,9 @@ function WorkoutsPageInner() {
                     <>
                       <input className={inputClass} type="number" step="any" placeholder="Weight (lb)" value={s.weight} onChange={(e) => updateSet(i, "weight", e.target.value)} />
                       <input className={inputClass} type="number" step="any" placeholder="Reps" value={s.reps} onChange={(e) => updateSet(i, "reps", e.target.value)} />
+                      {trackSpeed && (
+                        <input className={inputClass} type="number" step="0.01" placeholder="m/s" value={s.velocity || ""} onChange={(e) => updateSet(i, "velocity", e.target.value)} />
+                      )}
                     </>
                   )}
                   {(type === "bodyweight" || type === "banded") && (
@@ -722,6 +777,14 @@ function WorkoutsPageInner() {
             if (l.type === "weighted" || !l.type) {
               const top = Math.max(...(l.sets || []).map((s: any) => s.weight || 0));
               summary = `top ${top} lb · vol ${l.volumeLoad?.toLocaleString()} lb·reps`;
+              // VBT: average bar speed, and how many sets landed in the zone.
+              const avgV = avgVelocity(l.sets);
+              if (avgV) {
+                const zone = vbtFromLog(l);
+                const withV = (l.sets || []).filter((st: any) => Number(st.velocity) > 0);
+                const inZone = zone ? withV.filter((st: any) => velocityStatus(Number(st.velocity), zone) === "in").length : null;
+                summary += ` · ${avgV.toFixed(2)} m/s avg` + (zone ? ` · ${inZone}/${withV.length} in ${vbtZoneLabel(zone)}` : "");
+              }
             } else if (l.type === "bodyweight" || l.type === "banded") {
               const best = Math.max(...(l.sets || []).map((s: any) => s.reps || 0));
               summary = `best ${best} reps`;
