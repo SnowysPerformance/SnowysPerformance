@@ -26,6 +26,9 @@ router.post("/days/:dayId/exercises", ctrl.addExercise);
 router.patch("/exercises/:exerciseId", ctrl.updateExercise);
 router.delete("/exercises/:exerciseId", ctrl.deleteExercise);
 router.post("/days/:dayId/reorder", ctrl.reorderExercises);
+// Calendar drag-and-drop: move a day's workout onto another day (swapping
+// whatever was there) within the same program.
+router.post("/days/:dayId/swap", ctrl.swapDays);
 
 router.post("/days/:dayId/group", ctrl.groupExercises);
 router.post("/days/:dayId/group/:groupId/ungroup", ctrl.ungroupExercises);
