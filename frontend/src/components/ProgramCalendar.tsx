@@ -35,7 +35,7 @@ export default function ProgramCalendar({
   program: any;
   isCoach: boolean;
   onChanged: () => Promise<void> | void;
-  onOpenDay: (phaseId: string, weekId: string) => void;
+  onOpenDay: (phaseId: string, weekId: string, dayId: string) => void;
 }) {
   const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -171,7 +171,7 @@ export default function ProgramCalendar({
         </p>
       )}
       {isCoach && (
-        <p className="text-[11px] text-faint mb-2">Drag a workout onto another date to move it there — dropping it on a planned day swaps the two. Click a workout to open that week.</p>
+        <p className="text-[11px] text-faint mb-2">Drag a workout onto another date to move it there — dropping it on a planned day swaps the two. Click a workout to open that day full screen.</p>
       )}
       {msg && <p className="text-xs text-red-300 mb-2">{msg}</p>}
 
@@ -220,7 +220,7 @@ export default function ProgramCalendar({
                       setDragDayId(null);
                       setOverKey(null);
                     }}
-                    onClick={() => onOpenDay(slot.phase.id, slot.week.id)}
+                    onClick={() => onOpenDay(slot.phase.id, slot.week.id, slot.day.id)}
                     title={isCoach ? "Drag to move · click to open" : "Click to open"}
                     className={
                       "rounded border border-accent/40 px-1.5 py-1 text-left " +
