@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
-import { computeBestE1rm, computedWeight, targetLabel, hasSetDetails, computedWeightForSet, setTargetLabel } from "@/lib/planTargets";
+import { computeBestE1rm, computedWeight, targetLabel, hasSetDetails, computedWeightForSet, setTargetLabel, vbtFromExercise, vbtLabel } from "@/lib/planTargets";
 
 // HTML-escape a value before interpolating it into the printable day sheet
 // built in printDay() below — exercise names/notes are free text a coach
@@ -359,6 +359,8 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
         setsRepsHtml = escapeHtml(`${ex.sets || "—"} x ${isTimeBased ? `${ex.duration || "—"}s` : ex.reps || "—"}`);
         targetHtml = escapeHtml(targetLabel(ex, bestE1rm));
       }
+      const vbt = vbtLabel(vbtFromExercise(ex));
+      if (vbt) targetHtml += `<div class="tags">${escapeHtml(vbt)}</div>`;
       return `
         <tr>
           <td class="ex-name">${letterTag ? `<span class="letter">${escapeHtml(letterTag)}</span>` : ""}${escapeHtml(ex.exerciseName || "Exercise")}${tags ? `<div class="tags">${escapeHtml(tags)}</div>` : ""}</td>
@@ -753,6 +755,9 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
   const libItem = (library || []).find((it: any) => it.name === ex.exerciseName);
   const regressions: string[] = libItem?.regressions || [];
   const progressions: string[] = libItem?.progressions || [];
+  // VBT section stays hidden unless switched on (or already has a zone),
+  // so exercises without bar-speed targets look exactly as before.
+  const [vbtOpen, setVbtOpen] = useState(!!vbtFromExercise(ex));
   if (!isCoach) {
     return (
       <div className="bg-surface border border-edgesoft rounded p-2">
@@ -773,6 +778,9 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
             {ex.sets || "?"}x{isTimeBased ? `${ex.duration || "?"}s` : ex.reps || "?"} — {targetLabel(ex, bestE1rm)}
           </div>
         )}
+        {vbtFromExercise(ex) && (
+          <div className="text-[11px] mt-1 font-medium" style={{ color: "#7EC8E3" }}>⚡ {vbtLabel(vbtFromExercise(ex))}</div>
+        )}
         {ex.notes && <div className="text-[11px] text-faint italic mt-1 whitespace-pre-wrap">📝 {ex.notes}</div>}
         <button onClick={onLogThis} className="text-[10px] text-accent underline mt-1">Log this</button>
       </div>
@@ -781,6 +789,10 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
 
   const perSet = hasSetDetails(ex);
   const setDetails = perSet ? ex.setDetails : [];
+  function toggleVbt(on: boolean) {
+    setVbtOpen(on);
+    if (!on) onUpdate({ goalBarSpeed: null, goalBarSpeedMax: null, velocityLossPct: null });
+  }
 
   function toggleVaryBySet(on: boolean) {
     if (on) {
@@ -901,6 +913,25 @@ function ExerciseCard({ ex, isCoach, bestE1rm, library, selected, onToggleSelect
               {setDetails.map((s: any) => setTargetLabel(ex, s, bestE1rm)).join(" · ")}
             </div>
           )}
+        </div>
+      )}
+      {ex.type === "weighted" && (
+        <label className="flex items-center gap-1 text-[10px]" style={{ color: "#7EC8E3" }}>
+          <input type="checkbox" checked={vbtOpen} onChange={(e) => toggleVbt(e.target.checked)} />
+          VBT (bar speed)
+        </label>
+      )}
+      {ex.type === "weighted" && vbtOpen && (
+        <div className="space-y-1 bg-void border border-edgesoft rounded p-1.5">
+          <div className="flex gap-1 items-center">
+            <input className={inputClass} type="number" step="0.01" placeholder="Min m/s" value={ex.goalBarSpeed ?? ""} onChange={(e) => onUpdate({ goalBarSpeed: e.target.value })} />
+            <span className="text-[10px] text-faint flex-shrink-0">to</span>
+            <input className={inputClass} type="number" step="0.01" placeholder="Max m/s" value={ex.goalBarSpeedMax ?? ""} onChange={(e) => onUpdate({ goalBarSpeedMax: e.target.value })} />
+          </div>
+          <input className={inputClass} type="number" step="1" placeholder="Velocity-loss cutoff % (optional)" value={ex.velocityLossPct ?? ""} onChange={(e) => onUpdate({ velocityLossPct: e.target.value })} />
+          <div className="text-[10px] text-faint">
+            {vbtFromExercise(ex) ? vbtLabel(vbtFromExercise(ex)) : "Enter a min, a max, or both (e.g. 0.75 to 1.00)."}
+          </div>
         </div>
       )}
       <div className="flex gap-2 items-center flex-wrap text-[10px] text-faint">
