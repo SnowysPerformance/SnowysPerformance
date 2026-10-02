@@ -44,12 +44,7 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
         />
         <button className="w-full bg-accent text-accenttext font-semibold rounded px-3 py-2 hover:bg-accentstrong transition-colors">Sign in</button>
-        <p className="text-sm text-muted">
-          No account?{" "}
-          <Link className="underline text-accent" href="/register">
-            Register
-          </Link>
-        </p>
+        <p className="text-sm text-muted">No login yet? Ask your coach — they create your account and send you your email and password.</p>
         <p className="text-xs text-faint text-center">
           <Link className="underline" href="/terms">Terms</Link> · <Link className="underline" href="/privacy">Privacy</Link>
         </p>
