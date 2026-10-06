@@ -16,9 +16,24 @@ export async function api(path: string, options: RequestInit = {}) {
     },
   });
   const data = await res.json().catch(() => null);
+  // A sign-in only lasts so long (see signToken on the backend). Once it has
+  // expired -- or the account was removed -- every request comes back 401
+  // and every page would otherwise just look empty ("no plans", "no
+  // athletes") with no hint why. Sign the person out and send them to the
+  // login page instead. Matched on the auth middleware's own messages so a
+  // wrong "current password" (also a 401) doesn't log anyone out.
+  if (res.status === 401 && token && SESSION_ENDED.includes(data?.error)) {
+    clearSession();
+    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login?expired=1";
+    }
+    throw new Error("Your sign-in expired. Please sign in again.");
+  }
   if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
   return data;
 }
+
+const SESSION_ENDED = ["Invalid or expired token", "This account no longer exists", "Missing or invalid Authorization header"];
 
 export function saveSession(token: string, user: any) {
   localStorage.setItem("token", token);
