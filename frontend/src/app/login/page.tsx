@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, saveSession } from "@/lib/api";
@@ -8,7 +8,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [expired, setExpired] = useState(false);
   const router = useRouter();
+
+  // Sent here by api() when a saved sign-in has run out.
+  useEffect(() => {
+    setExpired(new URLSearchParams(window.location.search).get("expired") === "1");
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,6 +35,7 @@ export default function LoginPage() {
           <span className="text-lg">❄️</span>
           <h1 className="font-display text-lg font-semibold">Snowy's Performance</h1>
         </div>
+        {expired && !error && <div className="text-sm text-chalk">Your sign-in expired. Sign in again to see your plans.</div>}
         {error && <div className="text-red-400 text-sm">{error}</div>}
         <input
           className="w-full bg-inputbg border border-edge rounded px-3 py-2 text-sm placeholder-faint focus:border-accent outline-none"
