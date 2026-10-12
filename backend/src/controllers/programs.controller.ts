@@ -126,7 +126,8 @@ const fullInclude = {
     orderBy: { order: "asc" as const },
     include: {
       microcycles: {
-        include: { days: { include: { exercises: { orderBy: { order: "asc" as const } } } } },
+        orderBy: [{ weekNumber: "asc" as const }, { id: "asc" as const }],
+        include: { days: { orderBy: { dayOfWeek: "asc" as const }, include: { exercises: { orderBy: { order: "asc" as const } } } } },
       },
     },
   },
@@ -190,6 +191,21 @@ export async function addPhase(req: Request, res: Response) {
   const phase = await prisma.programPhase.create({
     data: { programId: program.id, name, weeks: weeks ? Number(weeks) : null, goal, order: program.phases.length },
   });
+  // "Weeks" on a new phase builds that many weeks right away (each with its
+  // 7 days), dated to follow straight on from the phase before it.
+  const count = Math.min(Math.max(Math.floor(Number(weeks) || 0), 0), 52);
+  for (let i = 1; i <= count; i++) {
+    const w = await prisma.programWeek.create({
+      data: {
+        programId: program.id,
+        phaseId: phase.id,
+        weekNumber: i,
+        name: `Week ${i}`,
+        days: { create: DAY_LABELS.map((label, d) => ({ dayOfWeek: d, label })) },
+      },
+    });
+    await slotNewWeek(program.id, w.id);
+  }
   res.status(201).json(phase);
 }
 
@@ -219,6 +235,56 @@ export async function deletePhase(req: Request, res: Response) {
 
 // ---------- weeks (microcycles) — auto-creates 7 days ----------
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Every week in a program, in program order: phases in their order, then
+// weeks by week number within each phase.
+async function orderedWeeks(programId: string) {
+  const phases = await prisma.programPhase.findMany({
+    where: { programId },
+    orderBy: { order: "asc" },
+    include: { microcycles: { orderBy: [{ weekNumber: "asc" }, { id: "asc" }], select: { id: true, startDate: true } } },
+  });
+  return phases.flatMap((ph) => ph.microcycles);
+}
+
+// Keeps the calendar in step with the program: starting at `fromWeekId`,
+// each later week (in program order) starts exactly 7 days after the week
+// before it. So once Week 1 has a start date, every week added after it --
+// in this phase or the next -- lands on the right dates automatically, and
+// changing one week's start date moves every week after it along with it.
+// Weeks before `fromWeekId` are never touched. If the chain hits a week
+// with no date before it, nothing after that point is changed.
+async function cascadeDates(programId: string, fromWeekId: string) {
+  const weeks = await orderedWeeks(programId);
+  const start = weeks.findIndex((w) => w.id === fromWeekId);
+  if (start < 0) return;
+  let prev = weeks[start].startDate;
+  const updates = [];
+  for (let i = start + 1; i < weeks.length; i++) {
+    if (!prev) break;
+    const next = new Date(prev.getTime() + WEEK_MS);
+    if (!weeks[i].startDate || weeks[i].startDate!.getTime() !== next.getTime()) {
+      updates.push(prisma.programWeek.update({ where: { id: weeks[i].id }, data: { startDate: next } }));
+    }
+    prev = next;
+  }
+  if (updates.length) await prisma.$transaction(updates);
+}
+
+// Gives a brand-new week the date right after the week before it (in
+// program order), then shifts everything after it so nothing overlaps.
+async function slotNewWeek(programId: string, weekId: string) {
+  const weeks = await orderedWeeks(programId);
+  const idx = weeks.findIndex((w) => w.id === weekId);
+  if (idx < 0) return;
+  const prev = idx > 0 ? weeks[idx - 1] : null;
+  if (prev?.startDate && !weeks[idx].startDate) {
+    await prisma.programWeek.update({ where: { id: weekId }, data: { startDate: new Date(prev.startDate.getTime() + WEEK_MS) } });
+  }
+  await cascadeDates(programId, weekId);
+}
+
 export async function addWeek(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
   const phase = await prisma.programPhase.findUnique({
@@ -227,18 +293,20 @@ export async function addWeek(req: Request, res: Response) {
   });
   if (!phase || phase.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
 
+  const nextNumber = phase.microcycles.reduce((m, w) => Math.max(m, w.weekNumber), 0) + 1;
   const name = req.body.name || `Week ${phase.microcycles.length + 1}`;
   const week = await prisma.programWeek.create({
     data: {
       programId: phase.programId,
       phaseId: phase.id,
-      weekNumber: phase.microcycles.length + 1,
+      weekNumber: nextNumber,
       name,
       startDate: req.body.startDate ? new Date(req.body.startDate) : null,
       days: { create: DAY_LABELS.map((label, i) => ({ dayOfWeek: i, label })) },
     },
     include: { days: { include: { exercises: true } } },
   });
+  await slotNewWeek(phase.programId, week.id);
   res.status(201).json(week);
 }
 
@@ -254,6 +322,8 @@ export async function updateWeek(req: Request, res: Response) {
       startDate: req.body.startDate !== undefined ? (req.body.startDate ? new Date(req.body.startDate) : null) : week.startDate,
     },
   });
+  // Every week after this one follows its new start date.
+  if (req.body.startDate !== undefined && updated.startDate) await cascadeDates(week.programId, week.id);
   res.json(updated);
 }
 
@@ -265,7 +335,16 @@ export async function duplicateWeek(req: Request, res: Response) {
   });
   if (!week || week.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
 
-  const nextStartDate = week.startDate ? new Date(week.startDate.getTime() + 7 * 24 * 60 * 60 * 1000) : null;
+  const nextStartDate = week.startDate ? new Date(week.startDate.getTime() + WEEK_MS) : null;
+
+  // The copy goes right after the week it was copied from, so push the
+  // phase's later weeks down one number to make room.
+  if (week.phaseId) {
+    await prisma.programWeek.updateMany({
+      where: { phaseId: week.phaseId, weekNumber: { gt: week.weekNumber } },
+      data: { weekNumber: { increment: 1 } },
+    });
+  }
 
   const cloned = await prisma.programWeek.create({
     data: {
@@ -294,6 +373,7 @@ export async function duplicateWeek(req: Request, res: Response) {
     },
     include: { days: { include: { exercises: true } } },
   });
+  await slotNewWeek(week.programId, cloned.id);
   res.status(201).json(cloned);
 }
 
@@ -301,7 +381,19 @@ export async function deleteWeek(req: Request, res: Response) {
   if (req.user!.role !== "COACH") return res.status(403).json({ error: "Forbidden" });
   const week = await prisma.programWeek.findUnique({ where: { id: req.params.weekId }, include: { program: true } });
   if (!week || week.program.teamId !== req.user!.teamId) return res.status(404).json({ error: "Not found" });
+  // Remember the week before this one so the weeks after it can slide up
+  // a week and close the gap on the calendar.
+  const weeks = await orderedWeeks(week.programId);
+  const idx = weeks.findIndex((w) => w.id === week.id);
+  const prevWeekId = idx > 0 ? weeks[idx - 1].id : null;
   await prisma.programWeek.delete({ where: { id: week.id } });
+  if (week.phaseId) {
+    await prisma.programWeek.updateMany({
+      where: { phaseId: week.phaseId, weekNumber: { gt: week.weekNumber } },
+      data: { weekNumber: { decrement: 1 } },
+    });
+  }
+  if (prevWeekId) await cascadeDates(week.programId, prevWeekId);
   res.status(204).send();
 }
 
