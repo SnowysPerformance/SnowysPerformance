@@ -626,7 +626,7 @@ export default function ProgramDetailPage({ params }: { params: { id: string } }
         const renderDay = (day: any, full: boolean) => {
               const blocks = buildBlocks(day);
               const dayDate = week.startDate
-                ? new Date(new Date(week.startDate).getTime() + day.dayOfWeek * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+                ? new Date(new Date(week.startDate).getTime() + day.dayOfWeek * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })
                 : null;
               return (
                 <div key={day.id} className={full ? "bg-void border border-edgesoft rounded-lg p-4 md:p-6" : focusMode ? "bg-void border border-edgesoft rounded-lg p-4" : "w-[320px] flex-shrink-0 bg-void border border-edgesoft rounded-lg p-3"}>
