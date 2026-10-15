@@ -18,6 +18,8 @@ export default function AthleteWorkspaceLayout({ children, params }: { children:
     { href: `${base}/log`, label: "Log" },
     { href: `${base}/progress`, label: "Progress" },
     { href: `${base}/testing`, label: "Testing" },
+    { href: `${base}/notes`, label: "Notes" },
+    { href: `${base}/messages`, label: "Messages" },
     { href: `${base}/settings`, label: "Settings" },
   ];
 
@@ -27,14 +29,14 @@ export default function AthleteWorkspaceLayout({ children, params }: { children:
         ← All athletes
       </Link>
       <h1 className="font-display text-2xl font-semibold mt-2 mb-4">{athlete?.name || "…"}</h1>
-      <div className="flex gap-1 border-b border-edgesoft mb-6">
+      <div className="flex gap-1 border-b border-edgesoft mb-6 overflow-x-auto">
         {tabs.map((t) => {
           const active = pathname === t.href;
           return (
             <Link
               key={t.href}
               href={t.href}
-              className={`px-3 pb-2 text-sm font-medium border-b-2 transition-colors ${active ? "border-accent text-primary" : "border-transparent text-faint hover:text-muted"}`}
+              className={`whitespace-nowrap px-3 pb-2 text-sm font-medium border-b-2 transition-colors ${active ? "border-accent text-primary" : "border-transparent text-faint hover:text-muted"}`}
             >
               {t.label}
             </Link>
