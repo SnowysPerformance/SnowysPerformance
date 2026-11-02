@@ -180,3 +180,47 @@ export async function acceptInvite(req: Request, res: Response) {
           user: { id: user.id, name: user.name, email: user.email, role: user.role, teamId, isHeadCoach: user.isHeadCoach, isPlatformAdmin: user.isPlatformAdmin },
     });
 }
+
+// ---------- Register page (new coaches, by email) ----------
+// The /register page lets a new coach sign up by typing their email instead
+// of opening their invite link. It only works if that email has a live
+// (unused, unexpired) COACH invite — either a brand-new-team invite from the
+// platform admin or a co-coach invite from a head coach. Athlete invites
+// don't count here; athletes still get their login from their coach.
+async function liveCoachInviteFor(rawEmail: unknown) {
+  const email = String(rawEmail || "").trim().toLowerCase();
+  if (!email) return null;
+  return prisma.invite.findFirst({
+    where: { email, role: "COACH", usedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: "desc" },
+    include: { team: { select: { name: true } }, invitedBy: { select: { name: true } } },
+  });
+}
+
+const NO_INVITE =
+  "There's no coach invite for that email. Registration is invite-only — ask for an invite to be sent to this exact email, then try again.";
+
+// Step 1: is there an invite for this email? Says what the account will be.
+export async function registerCheck(req: Request, res: Response) {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "Enter your email" });
+  if (await prisma.user.findUnique({ where: { email } })) {
+    return res.status(409).json({ error: "That email already has an account — go to Sign in instead." });
+  }
+  const invite = await liveCoachInviteFor(email);
+  if (!invite) return res.status(404).json({ error: NO_INVITE });
+  res.json({
+    email: invite.email,
+    newTeam: invite.newTeam,
+    teamName: invite.newTeam ? null : invite.team?.name || null,
+    invitedByName: invite.invitedBy.name,
+  });
+}
+
+// Step 2: create the account — exactly the same as opening the invite link.
+export async function registerWithInvite(req: Request, res: Response) {
+  const invite = await liveCoachInviteFor(req.body.email);
+  if (!invite) return res.status(400).json({ error: NO_INVITE });
+  req.body.token = invite.token;
+  return acceptInvite(req, res);
+}
