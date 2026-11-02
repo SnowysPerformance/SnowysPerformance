@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, saveSession } from "@/lib/api";
+import AuthTabs from "@/components/AuthTabs";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -35,6 +36,7 @@ export default function LoginPage() {
           <span className="text-lg">❄️</span>
           <h1 className="font-display text-lg font-semibold">Snowy's Performance</h1>
         </div>
+        <AuthTabs active="login" />
         {expired && !error && <div className="text-sm text-chalk">Your sign-in expired. Sign in again to see your plans.</div>}
         {error && <div className="text-red-400 text-sm">{error}</div>}
         <input
@@ -51,7 +53,7 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
         />
         <button className="w-full bg-accent text-accenttext font-semibold rounded px-3 py-2 hover:bg-accentstrong transition-colors">Sign in</button>
-        <p className="text-sm text-muted">No login yet? Ask your coach — they create your account and send you your email and password.</p>
+        <p className="text-sm text-muted">No login yet? Athletes: ask your coach — they create your account and send you your email and password. New coaches with an invite: use the Register tab.</p>
         <p className="text-xs text-faint text-center">
           <Link className="underline" href="/terms">Terms</Link> · <Link className="underline" href="/privacy">Privacy</Link>
         </p>
