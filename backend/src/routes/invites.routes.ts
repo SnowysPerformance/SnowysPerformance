@@ -14,4 +14,9 @@ router.delete("/:id", authenticate, ctrl.revokeInvite);
 router.get("/token/:token", inviteLimiter, ctrl.getInviteByToken);
 router.post("/accept", inviteLimiter, ctrl.acceptInvite);
 
+// Public -- the /register page: a new coach signs up with just their email,
+// allowed only if that email has a live coach invite.
+router.post("/register/check", inviteLimiter, ctrl.registerCheck);
+router.post("/register", inviteLimiter, ctrl.registerWithInvite);
+
 export default router;
